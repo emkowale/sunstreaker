@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: Sunstreaker
- * Version: 0.1.5
+ * Version: 0.1.6
  * Plugin URI: https://github.com/emkowale/sunstreaker
  * Description: Adds required Name + Number personalization fields to selected WooCommerce products (e.g., for jersey/shirt backs) with an optional per-product price add-on.
  * Author: Eric Kowalewski
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 
 
-define('SUNSTREAKER_VERSION', '0.1.5');
+define('SUNSTREAKER_VERSION', '0.1.6');
 define('SUNSTREAKER_PATH', plugin_dir_path(__FILE__));
 define('SUNSTREAKER_URL',  plugin_dir_url(__FILE__));
 define('SUNSTREAKER_SLUG', plugin_basename(__FILE__));
@@ -106,3 +106,4 @@ add_filter('plugins_api', function($res, $action, $args){
 require_once SUNSTREAKER_PATH.'includes/product-meta.php';
 require_once SUNSTREAKER_PATH.'includes/frontend-fields.php';
 require_once SUNSTREAKER_PATH.'includes/cart-order.php';
+require_once SUNSTREAKER_PATH.'includes/original-art.php';

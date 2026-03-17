@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.10] - 2026-03-17
+
+### Changes
+* chore(release): v0.1.9 (b16fc6b)
+
+
 ## [0.1.9] - 2026-03-17
 
 ### Changes

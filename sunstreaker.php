@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: Sunstreaker
- * Version: 0.1.9
+ * Version: 0.1.10
  * Plugin URI: https://github.com/emkowale/sunstreaker
  * Description: Adds required Name + Number personalization fields to selected WooCommerce products (e.g., for jersey/shirt backs) with an optional per-product price add-on.
  * Author: Eric Kowalewski
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 
 
-define('SUNSTREAKER_VERSION', '0.1.9');
+define('SUNSTREAKER_VERSION', '0.1.10');
 define('SUNSTREAKER_PATH', plugin_dir_path(__FILE__));
 define('SUNSTREAKER_URL',  plugin_dir_url(__FILE__));
 define('SUNSTREAKER_SLUG', plugin_basename(__FILE__));
@@ -124,6 +124,12 @@ function sunstreaker_latest_tag_payload(): array {
   ];
 }
 
+function sunstreaker_remote_update_payload(): array {
+  $remote = sunstreaker_latest_release_payload();
+  if (!$remote) $remote = sunstreaker_latest_tag_payload();
+  return is_array($remote) ? $remote : [];
+}
+
 // Add auth headers for private GitHub repos when downloading update metadata/package.
 add_filter('http_request_args', function($args, $url){
   if (!is_string($url) || $url === '') return $args;
@@ -165,8 +171,7 @@ add_filter('pre_set_site_transient_update_plugins', function($transient){
   if ($current === '') $current = SUNSTREAKER_VERSION;
   if ( empty($transient->checked) ) return $transient;
 
-  $remote = sunstreaker_latest_release_payload();
-  if (!$remote) $remote = sunstreaker_latest_tag_payload();
+  $remote = sunstreaker_remote_update_payload();
   if (!$remote) return $transient;
 
   $tag = (string) ($remote['version'] ?? '');
@@ -210,14 +215,16 @@ add_filter('site_transient_update_plugins', function($transient){
 
 add_filter('plugins_api', function($res, $action, $args){
   if ($action !== 'plugin_information' || (isset($args->slug) && $args->slug !== 'sunstreaker')) return $res;
+  $remote = sunstreaker_remote_update_payload();
   $info = new stdClass();
   $info->name = 'Sunstreaker';
   $info->slug = 'sunstreaker';
-  $info->version = SUNSTREAKER_VERSION;
+  $info->version = isset($remote['version']) ? (string) $remote['version'] : SUNSTREAKER_VERSION;
   $info->author = '<a href="https://github.com/emkowale">Eric Kowalewski</a>';
   $info->homepage = sunstreaker_github_repo_url();
   $info->requires = '6.0';
   $info->tested = '6.8.3';
+  $info->download_link = isset($remote['package']) ? (string) $remote['package'] : '';
   $info->sections = [ 'description' => 'Adds Name + Number personalization fields to selected WooCommerce products.' ];
   return $info;
 }, 10, 3);

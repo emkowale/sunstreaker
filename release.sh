@@ -3,13 +3,11 @@
 set -euo pipefail
 
 # ==== CONFIG ==================================================================
-OWNER="${GITHUB_OWNER:-emkowale}"
-REPO="${GITHUB_REPO:-sunstreaker}"
+OWNER="emkowale"
+REPO="sunstreaker"
 PLUGIN_SLUG="sunstreaker"       # top-level folder name inside the zip
 MAIN_FILE="sunstreaker.php"     # plugin main file (your repo keeps it at root)
-REMOTE_URL_SSH="git@github.com:${OWNER}/${REPO}.git"
-REMOTE_URL_HTTPS="https://github.com/${OWNER}/${REPO}.git"
-AUTO_CREATE_REPO="${AUTO_CREATE_REPO:-1}"   # set to 0 to disable gh auto-create
+REMOTE_URL="git@github.com:${OWNER}/${REPO}.git"
 
 # ==== UI HELPERS ==============================================================
 C_RESET=$'\033[0m'; C_CYAN=$'\033[1;36m'; C_YEL=$'\033[1;33m'; C_RED=$'\033[1;31m'; C_GRN=$'\033[1;32m'
@@ -30,78 +28,12 @@ if ! command -v git >/dev/null; then
   GIT_OK=0
   warn "git not found; will skip git operations"
 fi
-REMOTE_READY=0
-
-set_origin_url() {
-  local url="$1"
-  if git remote get-url origin >/dev/null 2>&1; then
-    git remote set-url origin "$url" >/dev/null 2>&1 || true
-  else
-    git remote add origin "$url" >/dev/null 2>&1 || true
-  fi
-}
-
-ensure_git_identity() {
-  local login name email
-  if ! git config user.name >/dev/null 2>&1; then
-    name="${GIT_AUTHOR_NAME:-${GIT_COMMITTER_NAME:-}}"
-    if [[ -z "$name" ]] && command -v gh >/dev/null 2>&1; then
-      name="$(gh api user -q .login 2>/dev/null || true)"
-    fi
-    [[ -n "$name" ]] || name="release-bot"
-    git config user.name "$name"
-    warn "git user.name missing; set local value to '${name}'"
-  fi
-
-  if ! git config user.email >/dev/null 2>&1; then
-    email="${GIT_AUTHOR_EMAIL:-${GIT_COMMITTER_EMAIL:-}}"
-    if [[ -z "$email" ]] && command -v gh >/dev/null 2>&1; then
-      login="$(gh api user -q .login 2>/dev/null || true)"
-      [[ -n "$login" ]] && email="${login}@users.noreply.github.com"
-    fi
-    [[ -n "$email" ]] || email="release-bot@users.noreply.github.com"
-    git config user.email "$email"
-    warn "git user.email missing; set local value to '${email}'"
-  fi
-}
-
-ensure_connected_remote() {
-  local gh_status
-
-  set_origin_url "$REMOTE_URL_SSH"
-  if git ls-remote --exit-code origin >/dev/null 2>&1; then
-    ok "Connected remote: ${REMOTE_URL_SSH}"
-    return 0
-  fi
-
-  warn "Could not reach ${REMOTE_URL_SSH}; trying HTTPS"
-  set_origin_url "$REMOTE_URL_HTTPS"
-  if git ls-remote --exit-code origin >/dev/null 2>&1; then
-    ok "Connected remote: ${REMOTE_URL_HTTPS}"
-    return 0
-  fi
-
-  if [[ "$AUTO_CREATE_REPO" == "1" ]] && command -v gh >/dev/null 2>&1; then
-    gh_status="$(gh auth status -h github.com 2>&1 || true)"
-    if grep -Eqi 'token .*invalid|failed to log in|not logged' <<<"$gh_status"; then
-      warn "gh auth invalid; cannot auto-create ${OWNER}/${REPO}"
-    else
-      step "Remote repo missing; creating ${OWNER}/${REPO} via gh"
-      if gh repo create "${OWNER}/${REPO}" --private --source=. --remote=origin >/dev/null 2>&1; then
-        ok "Created and connected ${OWNER}/${REPO}"
-        return 0
-      fi
-      warn "Failed to auto-create ${OWNER}/${REPO} with gh"
-    fi
-  fi
-
-  return 1
-}
 
 # ==== LOCATE REPO ROOT & MAIN FILE ===========================================
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 GIT_BOOTSTRAPPED=0
+UPDATE_MANIFEST="update.json"
 if [[ "$GIT_OK" -eq 1 ]] && [[ ! -d ".git" ]]; then
   step "No .git directory found; initializing local repository"
   git init -b main >/dev/null 2>&1 || git init >/dev/null
@@ -122,12 +54,10 @@ fi
 # ==== GIT: SELF-HEAL & SYNC ===================================================
 if [[ "$GIT_OK" -eq 1 ]]; then
   step "Preparing git state"
-  ensure_git_identity
-
-  if ensure_connected_remote; then
-    REMOTE_READY=1
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "$REMOTE_URL" >/dev/null 2>&1 || true
   else
-    warn "Remote ${OWNER}/${REPO} is not reachable; push/release upload may be skipped"
+    git remote add origin "$REMOTE_URL" >/dev/null 2>&1 || true
   fi
   git rebase --abort >/dev/null 2>&1 || true
   git merge  --abort >/dev/null 2>&1 || true
@@ -141,15 +71,11 @@ if [[ "$GIT_OK" -eq 1 ]]; then
     fi
   fi
 
-  if [[ "$REMOTE_READY" -eq 1 ]]; then
-    step "Fetching remote branch & tags"
-    git fetch origin main --tags || true
-    if git show-ref --verify --quiet refs/remotes/origin/main; then
-      git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1 || git branch --set-upstream-to=origin/main main >/dev/null 2>&1 || true
-      git merge --allow-unrelated-histories -s ours --no-edit origin/main -m "stitch: adopt origin/main (prefer local files)" >/dev/null 2>&1 || true
-    fi
-  else
-    warn "Skipping fetch because remote is unavailable"
+  step "Fetching remote branch & tags"
+  git fetch origin main --tags || true
+  if git show-ref --verify --quiet refs/remotes/origin/main; then
+    git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1 || git branch --set-upstream-to=origin/main main >/dev/null 2>&1 || true
+    git merge --allow-unrelated-histories -s ours --no-edit origin/main -m "stitch: adopt origin/main (prefer local files)" >/dev/null 2>&1 || true
   fi
   if [[ "$GIT_BOOTSTRAPPED" -eq 1 ]]; then
     ok "Git repository bootstrapped"
@@ -286,6 +212,25 @@ PHP
 php -r "$fixer_php" "$MAIN_PATH" "$NEXT"
 ok "Updated ${MAIN_PATH} to v${NEXT}"
 
+# ==== UPDATE MANIFEST =========================================================
+step "Updating ${UPDATE_MANIFEST}"
+cat > "$UPDATE_MANIFEST" <<EOF
+{
+  "name": "Sunstreaker",
+  "slug": "sunstreaker",
+  "version": "${NEXT}",
+  "url": "https://github.com/${OWNER}/${REPO}",
+  "package": "https://github.com/${OWNER}/${REPO}/releases/download/v${NEXT}/sunstreaker-v${NEXT}.zip",
+  "requires": "6.0",
+  "tested": "6.8.3",
+  "requires_php": "7.4",
+  "sections": {
+    "description": "Adds required Name + Number personalization fields to selected WooCommerce products."
+  }
+}
+EOF
+ok "Updated ${UPDATE_MANIFEST}"
+
 
 # ==== CHANGELOG AUTO-UPDATE ===================================================
 step "Updating CHANGELOG.md"
@@ -379,6 +324,7 @@ if [[ "$GIT_OK" -eq 1 ]]; then
   step "Committing & tagging"
   if git rev-parse --verify HEAD >/dev/null 2>&1; then
     git add "$MAIN_PATH"
+    git add "$UPDATE_MANIFEST"
     git add "$CHANGELOG"
   else
     git add -A
@@ -387,34 +333,15 @@ if [[ "$GIT_OK" -eq 1 ]]; then
   git rev-parse --verify HEAD >/dev/null 2>&1 || die "Unable to create a git commit; cannot tag/push."
   git tag -f "v${NEXT}"
 
-  if [[ "$REMOTE_READY" -eq 1 ]]; then
-    MAIN_PUSHED=0
-    TAG_PUSHED=0
-
-    step "Pushing branch & tag"
-    if git push origin main; then
-      MAIN_PUSHED=1
-    else
-      warn "Push rejected; refetching & stitching then retry"
-      git fetch origin main --tags || true
-      git merge --allow-unrelated-histories -s ours --no-edit origin/main -m "sync: prefer local files" || true
-      git push origin main && MAIN_PUSHED=1 || warn "Could not push main"
-    fi
-
-    if git push -f origin "v${NEXT}"; then
-      TAG_PUSHED=1
-    else
-      warn "Could not push tag v${NEXT}"
-    fi
-
-    if [[ "$MAIN_PUSHED" -eq 1 ]] && [[ "$TAG_PUSHED" -eq 1 ]]; then
-      ok "Git pushed"
-    else
-      warn "Git push incomplete; local artifact/build still finished"
-    fi
-  else
-    warn "Skipping push/tag because remote is unavailable"
+  step "Pushing branch & tag"
+  if ! git push origin main; then
+    warn "Push rejected; refetching & stitching then retry"
+    git fetch origin main --tags || true
+    git merge --allow-unrelated-histories -s ours --no-edit origin/main -m "sync: prefer local files" || true
+    git push origin main || warn "Could not push main (continuing)"
   fi
+  git push -f origin "v${NEXT}" || warn "Could not push tag v${NEXT}"
+  ok "Git pushed"
 else
   warn "Skipping commit/tag/push (no repo)."
 fi
@@ -436,7 +363,7 @@ fi
 ok "Built ${ART_DIR}/${ZIP_NAME}"
 
 # ==== GITHUB RELEASE (OPTIONAL) ===============================================
-if [[ "$GIT_OK" -eq 1 ]] && [[ "$REMOTE_READY" -eq 1 ]] && command -v gh >/dev/null 2>&1; then
+if [[ "$GIT_OK" -eq 1 ]] && command -v gh >/dev/null 2>&1; then
   step "Publishing GitHub release v${NEXT}"
   GH_AUTH_STATUS="$(gh auth status -h github.com 2>&1 || true)"
   if grep -Eqi 'token .*invalid|failed to log in|not logged' <<<"$GH_AUTH_STATUS"; then
@@ -466,7 +393,7 @@ if [[ "$GIT_OK" -eq 1 ]] && [[ "$REMOTE_READY" -eq 1 ]] && command -v gh >/dev/n
     fi
   fi
 else
-  warn "Skipped GitHub release (remote unavailable, or git/gh unavailable)"
+  warn "Skipped GitHub release (git/gh unavailable)"
 fi
 
 rm -rf package

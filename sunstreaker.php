@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: Sunstreaker
- * Version: 0.1.15
+ * Version: 0.1.16
  * Plugin URI: https://github.com/emkowale/sunstreaker
  * Description: Adds required Name + Number personalization fields to selected WooCommerce products (e.g., for jersey/shirt backs) with an optional per-product price add-on.
  * Author: Eric Kowalewski
@@ -15,45 +15,24 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 
 
-define('SUNSTREAKER_VERSION', '0.1.15');
+define('SUNSTREAKER_VERSION', '0.1.16');
 define('SUNSTREAKER_PATH', plugin_dir_path(__FILE__));
 define('SUNSTREAKER_URL',  plugin_dir_url(__FILE__));
 define('SUNSTREAKER_SLUG', plugin_basename(__FILE__));
+define('SUNSTREAKER_UPDATE_CACHE_KEY', 'sunstreaker_github_release_payload');
+define('SUNSTREAKER_UPDATE_CACHE_TTL', 5 * MINUTE_IN_SECONDS);
 
-/**
- * GitHub Releases updater (modeled after Bumblebee).
- * Expects an asset named: sunstreaker-vX.Y.Z.zip
- */
-add_filter('pre_set_site_transient_update_plugins', function($transient){
-  if ( !is_object($transient) ) return $transient;
-  if (!isset($transient->response) || !is_array($transient->response)) $transient->response = [];
-  if (!isset($transient->no_update) || !is_array($transient->no_update)) $transient->no_update = [];
-
-  unset($transient->response[SUNSTREAKER_SLUG]);
-
-  $current = isset($transient->checked[SUNSTREAKER_SLUG]) ? (string) $transient->checked[SUNSTREAKER_SLUG] : SUNSTREAKER_VERSION;
-  if ($current === '') $current = SUNSTREAKER_VERSION;
-  if ( empty($transient->checked) ) return $transient;
-
+function sunstreaker_fetch_remote_payload(): array {
   $api = wp_remote_get('https://api.github.com/repos/emkowale/sunstreaker/releases/latest', [
     'headers' => ['User-Agent' => 'WordPress; Sunstreaker Updater'],
     'timeout' => 10,
   ]);
-  if (is_wp_error($api)) return $transient;
-  $data = json_decode(wp_remote_retrieve_body($api), true);
-  if (!is_array($data) || empty($data['tag_name'])) return $transient;
-  $tag = ltrim((string) $data['tag_name'], 'vV');
-  if (version_compare($tag, $current, '<=')) {
-    $obj = new stdClass();
-    $obj->slug = 'sunstreaker';
-    $obj->plugin = SUNSTREAKER_SLUG;
-    $obj->new_version = $current;
-    $obj->url = 'https://github.com/emkowale/sunstreaker';
-    $obj->package = '';
-    $transient->no_update[SUNSTREAKER_SLUG] = $obj;
-    return $transient;
-  }
+  if (is_wp_error($api)) return [];
 
+  $data = json_decode(wp_remote_retrieve_body($api), true);
+  if (!is_array($data) || empty($data['tag_name'])) return [];
+
+  $tag = ltrim((string) $data['tag_name'], 'vV');
   $package = '';
   if (!empty($data['assets'])) {
     foreach ($data['assets'] as $asset) {
@@ -63,29 +42,79 @@ add_filter('pre_set_site_transient_update_plugins', function($transient){
       }
     }
   }
-  if ($package === '') $package = isset($data['zipball_url']) ? $data['zipball_url'] : '';
+  if ($package === '') $package = isset($data['zipball_url']) ? (string) $data['zipball_url'] : '';
+  if ($tag === '' || $package === '') return [];
 
+  return [
+    'version' => $tag,
+    'package' => $package,
+  ];
+}
+
+function sunstreaker_remote_payload(bool $force = false): array {
+  if (!$force) {
+    $cached = get_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
+    if (is_array($cached) && !empty($cached['version']) && !empty($cached['package'])) {
+      return $cached;
+    }
+  }
+
+  $payload = sunstreaker_fetch_remote_payload();
+  if ($payload) {
+    set_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY, $payload, SUNSTREAKER_UPDATE_CACHE_TTL);
+    return $payload;
+  }
+
+  $cached = get_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
+  return is_array($cached) ? $cached : [];
+}
+
+function sunstreaker_update_item(string $version, string $package): stdClass {
   $obj = new stdClass();
   $obj->slug = 'sunstreaker';
   $obj->plugin = SUNSTREAKER_SLUG;
-  $obj->new_version = $tag;
+  $obj->new_version = $version;
   $obj->url = 'https://github.com/emkowale/sunstreaker';
   $obj->package = $package;
+  return $obj;
+}
+
+function sunstreaker_apply_update_payload($transient, bool $force = false) {
+  if (!is_object($transient)) $transient = new stdClass();
+  if (!isset($transient->response) || !is_array($transient->response)) $transient->response = [];
+  if (!isset($transient->no_update) || !is_array($transient->no_update)) $transient->no_update = [];
+
+  $current = isset($transient->checked[SUNSTREAKER_SLUG]) ? (string) $transient->checked[SUNSTREAKER_SLUG] : SUNSTREAKER_VERSION;
+  if ($current === '') $current = SUNSTREAKER_VERSION;
+
+  $remote = sunstreaker_remote_payload($force);
+  if (!$remote || empty($remote['version'])) return $transient;
+
+  unset($transient->response[SUNSTREAKER_SLUG]);
+
+  $tag = (string) $remote['version'];
+  $package = isset($remote['package']) ? (string) $remote['package'] : '';
+  if (version_compare($tag, $current, '<=')) {
+    $transient->no_update[SUNSTREAKER_SLUG] = sunstreaker_update_item($current, '');
+    return $transient;
+  }
 
   unset($transient->no_update[SUNSTREAKER_SLUG]);
-  $transient->response[SUNSTREAKER_SLUG] = $obj;
+  $transient->response[SUNSTREAKER_SLUG] = sunstreaker_update_item($tag, $package);
   return $transient;
+}
+
+/**
+ * GitHub Releases updater (modeled after Bumblebee).
+ * Expects an asset named: sunstreaker-vX.Y.Z.zip
+ */
+add_filter('pre_set_site_transient_update_plugins', function($transient){
+  return sunstreaker_apply_update_payload($transient, true);
 });
 
 // Safety net: if a stale update row persists, suppress it when versions match.
 add_filter('site_transient_update_plugins', function($transient){
-  if (!is_object($transient) || !isset($transient->response[SUNSTREAKER_SLUG])) return $transient;
-  $item = $transient->response[SUNSTREAKER_SLUG];
-  $incoming = (is_object($item) && isset($item->new_version)) ? (string) $item->new_version : '';
-  if ($incoming !== '' && version_compare($incoming, SUNSTREAKER_VERSION, '<=')) {
-    unset($transient->response[SUNSTREAKER_SLUG]);
-  }
-  return $transient;
+  return sunstreaker_apply_update_payload($transient, false);
 });
 
 add_filter('plugins_api', function($res, $action, $args){

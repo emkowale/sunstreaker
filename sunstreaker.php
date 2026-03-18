@@ -1,7 +1,7 @@
 <?php
 /*
  * Plugin Name: Sunstreaker
- * Version: 0.1.19
+ * Version: 0.1.20
  * Plugin URI: https://github.com/emkowale/sunstreaker
  * Description: Adds required Name + Number personalization fields to selected WooCommerce products (e.g., for jersey/shirt backs) with an optional per-product price add-on.
  * Author: Eric Kowalewski
@@ -15,39 +15,40 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 
 
-define('SUNSTREAKER_VERSION', '0.1.19');
+define('SUNSTREAKER_VERSION', '0.1.20');
 define('SUNSTREAKER_PATH', plugin_dir_path(__FILE__));
 define('SUNSTREAKER_URL',  plugin_dir_url(__FILE__));
 define('SUNSTREAKER_SLUG', plugin_basename(__FILE__));
+define('SUNSTREAKER_UPDATE_MANIFEST_URL', 'https://raw.githubusercontent.com/emkowale/sunstreaker/main/update.json');
 define('SUNSTREAKER_UPDATE_CACHE_KEY', 'sunstreaker_github_release_payload');
 define('SUNSTREAKER_UPDATE_CACHE_TTL', 5 * MINUTE_IN_SECONDS);
 
-function sunstreaker_fetch_remote_payload(): array {
-  $api = wp_remote_get('https://api.github.com/repos/emkowale/sunstreaker/releases/latest', [
-    'headers' => ['User-Agent' => 'WordPress; Sunstreaker Updater'],
+function sunstreaker_fetch_remote_payload(bool $force = false): array {
+  $url = SUNSTREAKER_UPDATE_MANIFEST_URL;
+  if ($force) {
+    $url = add_query_arg('t', (string) time(), $url);
+  }
+
+  $api = wp_remote_get($url, [
+    'headers' => ['User-Agent' => 'WordPress; Sunstreaker Update Manifest'],
     'timeout' => 10,
   ]);
   if (is_wp_error($api)) return [];
 
   $data = json_decode(wp_remote_retrieve_body($api), true);
-  if (!is_array($data) || empty($data['tag_name'])) return [];
-
-  $tag = ltrim((string) $data['tag_name'], 'vV');
-  $package = '';
-  if (!empty($data['assets'])) {
-    foreach ($data['assets'] as $asset) {
-      if (!empty($asset['browser_download_url']) && preg_match('/sunstreaker-v[0-9]+\.[0-9]+\.[0-9]+\.zip$/', $asset['browser_download_url'])) {
-        $package = $asset['browser_download_url'];
-        break;
-      }
-    }
-  }
-  if ($package === '') $package = isset($data['zipball_url']) ? (string) $data['zipball_url'] : '';
-  if ($tag === '' || $package === '') return [];
+  if (!is_array($data) || empty($data['version']) || empty($data['package'])) return [];
 
   return [
-    'version' => $tag,
-    'package' => $package,
+    'name' => isset($data['name']) ? (string) $data['name'] : 'Sunstreaker',
+    'slug' => isset($data['slug']) ? (string) $data['slug'] : 'sunstreaker',
+    'version' => (string) $data['version'],
+    'package' => (string) $data['package'],
+    'url' => isset($data['url']) ? (string) $data['url'] : 'https://github.com/emkowale/sunstreaker',
+    'requires' => isset($data['requires']) ? (string) $data['requires'] : '6.0',
+    'tested' => isset($data['tested']) ? (string) $data['tested'] : '6.8.3',
+    'requires_php' => isset($data['requires_php']) ? (string) $data['requires_php'] : '7.4',
+    'sections' => (isset($data['sections']) && is_array($data['sections'])) ? $data['sections'] : [],
+    'checked_at' => time(),
   ];
 }
 
@@ -59,7 +60,7 @@ function sunstreaker_remote_payload(bool $force = false): array {
     }
   }
 
-  $payload = sunstreaker_fetch_remote_payload();
+  $payload = sunstreaker_fetch_remote_payload($force);
   if ($payload) {
     set_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY, $payload, SUNSTREAKER_UPDATE_CACHE_TTL);
     return $payload;
@@ -77,6 +78,12 @@ function sunstreaker_update_item(string $version, string $package): stdClass {
   $obj->url = 'https://github.com/emkowale/sunstreaker';
   $obj->package = $package;
   return $obj;
+}
+
+function sunstreaker_update_cache_is_stale(): bool {
+  $cached = get_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
+  if (!is_array($cached) || empty($cached['checked_at'])) return true;
+  return ((int) $cached['checked_at'] + SUNSTREAKER_UPDATE_CACHE_TTL) <= time();
 }
 
 function sunstreaker_apply_update_payload($transient, bool $force = false) {
@@ -136,15 +143,41 @@ add_filter('site_transient_update_plugins', function($transient){
   return sunstreaker_apply_update_payload($transient, false);
 });
 
+add_filter('update_plugins_github.com', function($update, $plugin_data, $plugin_file){
+  if ($plugin_file !== SUNSTREAKER_SLUG) return $update;
+
+  $remote = sunstreaker_remote_payload(false);
+  if (!$remote || empty($remote['version']) || empty($remote['package'])) return false;
+
+  return [
+    'id' => $plugin_data['UpdateURI'],
+    'slug' => 'sunstreaker',
+    'version' => (string) $remote['version'],
+    'url' => isset($remote['url']) ? (string) $remote['url'] : 'https://github.com/emkowale/sunstreaker',
+    'package' => (string) $remote['package'],
+    'tested' => isset($remote['tested']) ? (string) $remote['tested'] : '6.8.3',
+    'requires' => isset($remote['requires']) ? (string) $remote['requires'] : '6.0',
+    'requires_php' => isset($remote['requires_php']) ? (string) $remote['requires_php'] : '7.4',
+  ];
+}, 10, 4);
+
 add_action('load-plugins.php', function(){
   if (!current_user_can('update_plugins')) return;
+  if (sunstreaker_update_cache_is_stale() && function_exists('wp_clean_plugins_cache')) {
+    delete_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
+    wp_clean_plugins_cache(true);
+  }
   sunstreaker_store_update_transient(false);
-});
+}, 1);
 
 add_action('load-update-core.php', function(){
   if (!current_user_can('update_plugins')) return;
+  if (function_exists('wp_clean_plugins_cache')) {
+    delete_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
+    wp_clean_plugins_cache(true);
+  }
   sunstreaker_store_update_transient(true);
-});
+}, 1);
 
 add_action('admin_init', function(){
   if (!is_admin() || !current_user_can('update_plugins')) return;
@@ -153,7 +186,14 @@ add_action('admin_init', function(){
   check_admin_referer('sunstreaker_check_updates');
 
   delete_site_transient(SUNSTREAKER_UPDATE_CACHE_KEY);
-  delete_site_transient('update_plugins');
+  if (function_exists('wp_clean_plugins_cache')) {
+    wp_clean_plugins_cache(true);
+  } else {
+    delete_site_transient('update_plugins');
+  }
+  if (function_exists('wp_update_plugins')) {
+    wp_update_plugins();
+  }
   sunstreaker_store_update_transient(true);
 
   $remote = sunstreaker_remote_payload(false);
@@ -178,15 +218,20 @@ add_action('admin_notices', function(){
 
 add_filter('plugins_api', function($res, $action, $args){
   if ($action !== 'plugin_information' || (isset($args->slug) && $args->slug !== 'sunstreaker')) return $res;
+  $remote = sunstreaker_remote_payload(false);
   $info = new stdClass();
-  $info->name = 'Sunstreaker';
+  $info->name = !empty($remote['name']) ? (string) $remote['name'] : 'Sunstreaker';
   $info->slug = 'sunstreaker';
-  $info->version = SUNSTREAKER_VERSION;
+  $info->version = !empty($remote['version']) ? (string) $remote['version'] : SUNSTREAKER_VERSION;
   $info->author = '<a href="https://github.com/emkowale">Eric Kowalewski</a>';
-  $info->homepage = 'https://github.com/emkowale/sunstreaker';
-  $info->requires = '6.0';
-  $info->tested = '6.8.3';
-  $info->sections = [ 'description' => 'Adds Name + Number personalization fields to selected WooCommerce products.' ];
+  $info->homepage = !empty($remote['url']) ? (string) $remote['url'] : 'https://github.com/emkowale/sunstreaker';
+  $info->requires = !empty($remote['requires']) ? (string) $remote['requires'] : '6.0';
+  $info->tested = !empty($remote['tested']) ? (string) $remote['tested'] : '6.8.3';
+  $info->requires_php = !empty($remote['requires_php']) ? (string) $remote['requires_php'] : '7.4';
+  $info->download_link = !empty($remote['package']) ? (string) $remote['package'] : '';
+  $info->sections = !empty($remote['sections']) && is_array($remote['sections'])
+    ? $remote['sections']
+    : [ 'description' => 'Adds required Name + Number personalization fields to selected WooCommerce products.' ];
   return $info;
 }, 10, 3);
 

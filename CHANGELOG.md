@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.15] - 2026-03-18
+
+### Changes
+* chore(release): v0.1.14 (30d253a)
+
+
 ## [0.1.14] - 2026-03-18
 
 ### Changes

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23] - 2026-03-18
+
+### Changes
+* chore(release): v0.1.22 (cb5d548)
+* chore: publish update manifest workflow (48eaaa2)
+
+
 ## [0.1.22] - 2026-03-18
 
 ### Changes

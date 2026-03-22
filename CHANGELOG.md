@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.28] - 2026-03-22
+
+### Changes
+* chore(release): v0.1.27 (abb25cd)
+
+
 ## [0.1.27] - 2026-03-22
 
 ### Changes

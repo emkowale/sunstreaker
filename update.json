@@ -1,9 +1,9 @@
 {
   "name": "Sunstreaker",
   "slug": "sunstreaker",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "url": "https://github.com/emkowale/sunstreaker",
-  "package": "https://github.com/emkowale/sunstreaker/releases/download/v0.1.27/sunstreaker-v0.1.27.zip",
+  "package": "https://github.com/emkowale/sunstreaker/releases/download/v0.1.28/sunstreaker-v0.1.28.zip",
   "requires": "6.0",
   "tested": "6.8.3",
   "requires_php": "7.4",

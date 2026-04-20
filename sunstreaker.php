@@ -1,12 +1,13 @@
 <?php
 /*
  * Plugin Name: Sunstreaker
- * Version: 0.1.30
+ * Version: 0.1.32
  * Plugin URI: https://github.com/emkowale/sunstreaker
  * Description: Adds required Name + Number personalization fields to selected WooCommerce products (e.g., for jersey/shirt backs) with an optional per-product price add-on.
  * Author: Eric Kowalewski
  * Requires at least: 6.0
  * Requires PHP: 7.4
+ * Requires Plugins: woocommerce, soundwave
  * Update URI: https://github.com/emkowale/sunstreaker
  * GitHub Plugin URI: emkowale/sunstreaker
  */
@@ -15,7 +16,30 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 
 
-define('SUNSTREAKER_VERSION', '0.1.30');
+define('SUNSTREAKER_VERSION', '0.1.32');
+add_action('plugins_loaded', function(){
+  $missing = [];
+  if (!class_exists('WooCommerce')) $missing[] = 'WooCommerce';
+  if (!defined('SOUNDWAVE_VERSION')) $missing[] = 'Soundwave';
+  if (empty($missing)) return;
+
+  if (!function_exists('deactivate_plugins')) {
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+  }
+  if (function_exists('deactivate_plugins')) {
+    deactivate_plugins(plugin_basename(__FILE__));
+  }
+
+  add_action('admin_notices', function() use ($missing){
+    echo '<div class="notice notice-error"><p><strong>Sunstreaker requires: '.esc_html(implode(', ', $missing)).'.</strong> The plugin was deactivated.</p></div>';
+  });
+}, 1);
+
+if (!class_exists('WooCommerce') || !defined('SOUNDWAVE_VERSION')) {
+  // Dependency enforcement happens on plugins_loaded above. Do not bail here,
+  // because Soundwave may not be loaded yet while active plugins are still booting.
+}
+
 define('SUNSTREAKER_PATH', plugin_dir_path(__FILE__));
 define('SUNSTREAKER_URL',  plugin_dir_url(__FILE__));
 define('SUNSTREAKER_SLUG', plugin_basename(__FILE__));

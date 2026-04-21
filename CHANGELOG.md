@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.1.33] - 2026-04-21
+
+### Changes
+* chore(release): v0.1.32 (0f70d8c)
+* chore(release): v0.1.30 (8cd33ee)
+* chore(release): v0.1.29 (2bf0670)
+* chore(release): v0.1.28 (92b68c3)
+* chore(release): v0.1.27 (abb25cd)
+* chore(release): v0.1.26 (87e9bf8)
+* chore(release): v0.1.25 (3845b49)
+* chore(release): v0.1.24 (840fb4d)
+* chore(release): v0.1.23 (7fc1d12)
+* chore(release): v0.1.22 (cb5d548)
+* chore: publish update manifest workflow (48eaaa2)
+* chore(release): v0.1.21 (e73fa94)
+* chore(release): v0.1.20 (fadf08d)
+* chore(release): v0.1.19 (531546f)
+* chore(release): v0.1.18 (5dfc7a8)
+* chore(release): v0.1.17 (906d3d4)
+* chore(release): v0.1.16 (82235f6)
+* chore(release): v0.1.15 (b6d125f)
+* chore(release): v0.1.14 (30d253a)
+* chore(release): v0.1.13 (ec64d8b)
+* chore(release): v0.1.12 (fdb146e)
+* chore(release): v0.1.11 (b88e110)
+* chore(release): v0.1.10 (95214be)
+* chore(release): v0.1.9 (b16fc6b)
+* chore(release): v0.1.8 (5a20bdb)
+* chore(release): v0.1.7 (5887d56)
+* chore(release): v0.1.6 (7c2f7ba)
+* chore(release): v0.1.5 (7e6981e)
+* chore(release): v0.1.4 (d54fb77)
+* chore(release): v0.1.3 (3c6e7ed)
+* chore(release): v0.1.2 (0815694)
+* chore(release): v0.1.1 (546083e)
+
+
 ## [0.1.31] - 2026-04-13
 
 ### Changes

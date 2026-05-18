@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.35] - 2026-05-18
+
+### Changes
+* chore(release): v0.1.34 (fb45744)
+
+
 ## [0.1.34] - 2026-05-07
 
 ### Changes

@@ -116,6 +116,27 @@
   padding: 10px;
 }
 
+.woocommerce_options_panel .sunstreaker-logo-library__item.is-default{
+  border-color: #2271b1;
+  box-shadow: 0 0 0 1px #2271b1;
+}
+
+.woocommerce_options_panel .sunstreaker-logo-library__default,
+.woocommerce_options_panel .sunstreaker-logo-library__default-badge{
+  align-self: flex-start;
+}
+
+.woocommerce_options_panel .sunstreaker-logo-library__default-badge{
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2271b1;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.8;
+}
+
 .woocommerce_options_panel .sunstreaker-logo-library__thumb{
   display: block;
   width: 100%;

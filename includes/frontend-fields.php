@@ -81,7 +81,7 @@ add_action('wp_enqueue_scripts', function(){
   }
 
   wp_localize_script('sunstreaker-frontend', 'sunstreakerPreview', [
-    'ajaxUrl' => admin_url('admin-ajax.php'),
+    'ajaxUrl' => admin_url('admin-ajax.php', 'relative'),
     'nonce' => wp_create_nonce('sunstreaker_boundaries'),
     'productId' => $product_id,
     'boundaries' => function_exists('sunstreaker_get_preview_boundaries')
@@ -95,8 +95,8 @@ add_action('wp_enqueue_scripts', function(){
       : false,
     'canSaveMockup' => true,
     'inkColor' => $ink_color,
-    'fontStack' => function_exists('sunstreaker_get_font_stack')
-      ? sunstreaker_get_font_stack($product_id)
+    'fontStack' => function_exists('sunstreaker_get_font_stack_from_choice_key')
+      ? sunstreaker_get_font_stack_from_choice_key('varsity_block', 'varsity_block')
       : "\"Varsity Block\",\"Freshman\",\"College\",\"Oswald\",\"Arial Black\",sans-serif",
     'rightChestFontStack' => function_exists('sunstreaker_get_right_chest_font_stack')
       ? sunstreaker_get_right_chest_font_stack($product_id)
@@ -250,13 +250,7 @@ function sunstreaker_get_posted_scrub_values(int $product_id = 0): array {
 }
 
 function sunstreaker_get_posted_font_choice_key(int $product_id = 0): string {
-  $fallback = function_exists('sunstreaker_get_name_number_font_choice_key')
-    ? sunstreaker_get_name_number_font_choice_key($product_id)
-    : 'varsity_block';
-  $raw = isset($_POST['sunstreaker_font_choice']) ? (string) wp_unslash($_POST['sunstreaker_font_choice']) : '';
-  return function_exists('sunstreaker_resolve_name_number_font_choice_key')
-    ? sunstreaker_resolve_name_number_font_choice_key($raw, $fallback)
-    : sanitize_key($raw !== '' ? $raw : $fallback);
+  return 'varsity_block';
 }
 
 function sunstreaker_get_posted_right_chest_font_choice_key(int $product_id = 0): string {
@@ -429,7 +423,6 @@ add_action('woocommerce_before_add_to_cart_button', function(){
 
   $posted_name = esc_attr(sunstreaker_get_posted_name());
   $posted_num  = esc_attr(sunstreaker_get_posted_number());
-  $posted_font_choice_key = function_exists('sunstreaker_get_posted_font_choice_key') ? sunstreaker_get_posted_font_choice_key($product_id) : 'varsity_block';
   $posted_logo_locations = function_exists('sunstreaker_get_posted_logo_location_choices') ? sunstreaker_get_posted_logo_location_choices($product_id) : [];
   $posted_logo_id = !empty($posted_logo_locations) ? (int) (($posted_logo_locations[array_key_first($posted_logo_locations)]['logo_id'] ?? 0)) : (function_exists('sunstreaker_get_posted_logo_id') ? sunstreaker_get_posted_logo_id() : 0);
   $posted_right_chest_name = esc_attr(function_exists('sunstreaker_get_posted_right_chest_name_credentials') ? sunstreaker_get_posted_right_chest_name_credentials() : '');
@@ -448,7 +441,6 @@ add_action('woocommerce_before_add_to_cart_button', function(){
   $posted_scrub_values = function_exists('sunstreaker_get_posted_scrub_values') ? sunstreaker_get_posted_scrub_values($product_id) : [];
   $logo_location_settings = function_exists('sunstreaker_get_enabled_logo_location_settings') ? sunstreaker_get_enabled_logo_location_settings($product_id) : [];
   $font_choices = function_exists('sunstreaker_right_chest_font_choices') ? sunstreaker_right_chest_font_choices() : [];
-  $name_number_font_choices = function_exists('sunstreaker_name_number_font_choices') ? sunstreaker_name_number_font_choices() : $font_choices;
   $posted_front_art_url = esc_url(function_exists('sunstreaker_get_posted_front_back_art_url') ? sunstreaker_get_posted_front_back_art_url('front') : '');
   $posted_back_art_url = esc_url(function_exists('sunstreaker_get_posted_front_back_art_url') ? sunstreaker_get_posted_front_back_art_url('back') : '');
   $posted_front_transform = esc_attr(function_exists('sunstreaker_get_posted_front_back_transform_json') ? sunstreaker_get_posted_front_back_transform_json('front') : '');
@@ -531,18 +523,6 @@ add_action('woocommerce_before_add_to_cart_button', function(){
     echo '    <label for="sunstreaker_number">Number</label>';
     echo '    <input type="text" class="sunstreaker-text-input input-text text" id="sunstreaker_number" name="sunstreaker_number" value="'.$posted_num.'" inputmode="numeric" pattern="^[0-9]{1,2}$" maxlength="2" />';
     echo '  </div>';
-    if (!empty($name_number_font_choices)) {
-      echo '  <div class="sunstreaker-field">';
-      echo '    <label for="sunstreaker_font_choice">Font</label>';
-      echo '    <select class="sunstreaker-select sunstreaker-font-select" id="sunstreaker_font_choice" name="sunstreaker_font_choice">';
-      foreach ($name_number_font_choices as $choice_key => $choice) {
-        $label = isset($choice['label']) ? (string) $choice['label'] : (string) $choice_key;
-        $stack = isset($choice['stack']) ? (string) $choice['stack'] : '';
-        echo '      <option value="'.esc_attr($choice_key).'" data-font-stack="'.esc_attr($stack).'" style="font-family:'.esc_attr($stack).';" '.selected($posted_font_choice_key, $choice_key, false).'>'.esc_html($label).'</option>';
-      }
-      echo '    </select>';
-      echo '  </div>';
-    }
     echo '</div>';
   }
 

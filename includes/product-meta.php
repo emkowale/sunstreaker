@@ -105,6 +105,7 @@ function sunstreaker_default_logo_location_settings(string $location_key = ''): 
     'price' => '14.00',
     'production' => 'Embroidery',
     'logo_ids' => [],
+    'default_logo_id' => 0,
   ];
 
   if ($location_key === '' || !isset(sunstreaker_logo_print_locations()[$location_key])) {
@@ -129,12 +130,17 @@ function sunstreaker_sanitize_logo_location_settings_entry($raw, string $locatio
     (string) $defaults['production']
   );
   $logo_ids = sunstreaker_sanitize_logo_ids($raw['logo_ids'] ?? []);
+  $default_logo_id = absint($raw['default_logo_id'] ?? 0);
+  if ($default_logo_id > 0 && !in_array($default_logo_id, $logo_ids, true)) {
+    $default_logo_id = 0;
+  }
 
   return [
     'enabled' => $enabled,
     'price' => $price,
     'production' => $production,
     'logo_ids' => $logo_ids,
+    'default_logo_id' => $default_logo_id,
   ];
 }
 
@@ -894,10 +900,7 @@ function sunstreaker_get_font_choice_key($product_id): string {
 }
 
 function sunstreaker_get_name_number_font_choice_key($product_id): string {
-  $product_id = sunstreaker_get_settings_product_id($product_id);
-  $default = sunstreaker_default_font_choice_key();
-  $raw = get_post_meta($product_id, '_sunstreaker_font_choice', true);
-  return sunstreaker_resolve_name_number_font_choice_key(is_string($raw) ? $raw : '', $default);
+  return sunstreaker_default_font_choice_key();
 }
 
 function sunstreaker_get_font_choice($product_id): array {
@@ -909,8 +912,6 @@ function sunstreaker_get_font_choice($product_id): array {
 
 function sunstreaker_get_name_number_font_choice($product_id): array {
   $choices = sunstreaker_name_number_font_choices();
-  $key = sunstreaker_get_name_number_font_choice_key($product_id);
-  if (isset($choices[$key])) return $choices[$key];
   return $choices[sunstreaker_default_font_choice_key()];
 }
 
@@ -1329,6 +1330,29 @@ function sunstreaker_can_edit_product_boundaries(int $product_id): bool {
   return current_user_can('manage_woocommerce') || current_user_can('manage_options');
 }
 
+function sunstreaker_boundary_request_is_same_origin(): bool {
+  $site_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+  if ($site_host === '') return false;
+
+  foreach (['HTTP_ORIGIN', 'HTTP_REFERER'] as $server_key) {
+    $raw = isset($_SERVER[$server_key]) ? (string) wp_unslash($_SERVER[$server_key]) : '';
+    if ($raw === '') continue;
+
+    $host = (string) wp_parse_url($raw, PHP_URL_HOST);
+    if ($host !== '' && strcasecmp($host, $site_host) === 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function sunstreaker_boundary_request_is_authorized(int $product_id, string $nonce): bool {
+  if (!sunstreaker_can_edit_product_boundaries($product_id)) return false;
+  if (wp_verify_nonce($nonce, 'sunstreaker_boundaries')) return true;
+  return sunstreaker_boundary_request_is_same_origin();
+}
+
 // Toggle + addon price (General tab) — modeled after Frenzy's "Use with Frenzy"
 add_action('woocommerce_product_options_general_product_data', function () {
   echo '<div class="options_group">';
@@ -1412,6 +1436,7 @@ add_action('woocommerce_product_options_general_product_data', function () {
     $selected_logo_ids = !empty($location_settings['logo_ids']) && is_array($location_settings['logo_ids'])
       ? array_values(array_map('absint', $location_settings['logo_ids']))
       : [];
+    $default_logo_id = !empty($location_settings['default_logo_id']) ? absint($location_settings['default_logo_id']) : 0;
 
     echo '    <div class="sunstreaker-logo-location" data-location-key="'.esc_attr($location_key).'">';
     echo '      <label class="sunstreaker-logo-location__label">';
@@ -1437,6 +1462,7 @@ add_action('woocommerce_product_options_general_product_data', function () {
     echo '          <label for="_sunstreaker_logo_location_logo_ids_'.esc_attr($location_key).'">'.esc_html__('Logos', 'sunstreaker').'</label>';
     echo '          <span class="wrap">';
     echo '            <input type="hidden" id="_sunstreaker_logo_location_logo_ids_'.esc_attr($location_key).'" class="sunstreaker-logo-library__input" data-location-key="'.esc_attr($location_key).'" name="_sunstreaker_logo_location_logo_ids['.esc_attr($location_key).']" value="'.esc_attr(implode(',', $selected_logo_ids)).'" />';
+    echo '            <input type="hidden" id="_sunstreaker_logo_location_default_logo_id_'.esc_attr($location_key).'" class="sunstreaker-logo-library__default-input" data-location-key="'.esc_attr($location_key).'" name="_sunstreaker_logo_location_default_logo_id['.esc_attr($location_key).']" value="'.esc_attr((string) $default_logo_id).'" />';
     echo '            <button type="button" class="button sunstreaker-logo-library__select" data-location-key="'.esc_attr($location_key).'">'.esc_html__('Select logos', 'sunstreaker').'</button>';
     echo '            <button type="button" class="button-link-delete sunstreaker-logo-library__clear" data-location-key="'.esc_attr($location_key).'"'.(empty($selected_logo_ids) ? ' hidden' : '').'>'.esc_html__('Clear', 'sunstreaker').'</button>';
     echo '            <span class="description">'.esc_html__('Choose one or more media library logos available for this location.', 'sunstreaker').'</span>';
@@ -1553,6 +1579,9 @@ add_action('woocommerce_admin_process_product_object', function ($product) {
   $posted_logo_location_logo_ids = isset($_POST['_sunstreaker_logo_location_logo_ids']) && is_array($_POST['_sunstreaker_logo_location_logo_ids'])
     ? wp_unslash($_POST['_sunstreaker_logo_location_logo_ids'])
     : [];
+  $posted_logo_location_default_logo_id = isset($_POST['_sunstreaker_logo_location_default_logo_id']) && is_array($_POST['_sunstreaker_logo_location_default_logo_id'])
+    ? wp_unslash($_POST['_sunstreaker_logo_location_default_logo_id'])
+    : [];
 
   $logo_location_settings = [];
   $aggregate_logo_ids = [];
@@ -1566,6 +1595,7 @@ add_action('woocommerce_admin_process_product_object', function ($product) {
       'price' => $posted_logo_location_price[$location_key] ?? '',
       'production' => $posted_logo_location_production[$location_key] ?? '',
       'logo_ids' => $posted_logo_location_logo_ids[$location_key] ?? [],
+      'default_logo_id' => $posted_logo_location_default_logo_id[$location_key] ?? 0,
     ], $location_key);
 
     foreach ($logo_location_settings[$location_key]['logo_ids'] as $logo_id) {
@@ -1636,6 +1666,8 @@ add_action('admin_enqueue_scripts', function($hook){
   $ver = SUNSTREAKER_VERSION;
   if (file_exists($path)) $ver = (string) filemtime($path);
 
+  $admin_logo_location_settings = $product_id > 0 ? sunstreaker_get_logo_location_settings($product_id) : [];
+
   wp_enqueue_script('sunstreaker-product-edit', SUNSTREAKER_URL.'assets/product.edit.js', ['jquery'], $ver, true);
   wp_localize_script('sunstreaker-product-edit', 'sunstreakerProductEdit', [
     'fonts' => array_merge(sunstreaker_font_choices(), sunstreaker_right_chest_font_choices()),
@@ -1643,21 +1675,22 @@ add_action('admin_enqueue_scripts', function($hook){
       $carry[$location_key] = sunstreaker_get_logo_location_choices($product_id, $location_key);
       return $carry;
     }, []) : [],
+    'defaultLogoIdsByLocation' => $product_id > 0 ? array_reduce(array_keys(sunstreaker_logo_print_locations()), static function(array $carry, string $location_key) use ($admin_logo_location_settings): array {
+      $carry[$location_key] = !empty($admin_logo_location_settings[$location_key]['default_logo_id']) ? absint($admin_logo_location_settings[$location_key]['default_logo_id']) : 0;
+      return $carry;
+    }, []) : [],
     'strings' => [
       'chooseLogos' => __('Choose logos', 'sunstreaker'),
       'useSelected' => __('Use selected logos', 'sunstreaker'),
       'emptyLogos' => __('No logos selected yet.', 'sunstreaker'),
       'removeLogo' => __('Remove logo', 'sunstreaker'),
+      'setDefaultLogo' => __('Set default', 'sunstreaker'),
+      'defaultLogo' => __('Default', 'sunstreaker'),
     ],
   ]);
 });
 
-add_action('wp_ajax_sunstreaker_get_boundaries', function () {
-  $nonce = isset($_POST['_ajax_nonce']) ? (string) wp_unslash($_POST['_ajax_nonce']) : '';
-  if (!wp_verify_nonce($nonce, 'sunstreaker_boundaries')) {
-    wp_send_json_error(['message' => 'Bad nonce'], 403);
-  }
-
+add_action('wp_ajax_sunstreaker_boundary_nonce', function () {
   $product_id = absint($_POST['product_id'] ?? 0);
   if ($product_id <= 0 || get_post_type($product_id) !== 'product') {
     wp_send_json_error(['message' => 'Invalid product'], 400);
@@ -1667,34 +1700,56 @@ add_action('wp_ajax_sunstreaker_get_boundaries', function () {
   }
 
   wp_send_json_success([
+    'nonce' => wp_create_nonce('sunstreaker_boundaries'),
+  ]);
+});
+
+add_action('wp_ajax_sunstreaker_get_boundaries', function () {
+  $product_id = absint($_POST['product_id'] ?? 0);
+  if ($product_id <= 0 || get_post_type($product_id) !== 'product') {
+    wp_send_json_error(['message' => 'Invalid product'], 400);
+  }
+  $nonce = isset($_POST['_ajax_nonce']) ? (string) wp_unslash($_POST['_ajax_nonce']) : '';
+  if (!sunstreaker_boundary_request_is_authorized($product_id, $nonce)) {
+    wp_send_json_error(['message' => 'Unauthorized'], 403);
+  }
+
+  wp_send_json_success([
     'boundaries' => sunstreaker_get_preview_boundaries($product_id),
   ]);
 });
 
 add_action('wp_ajax_sunstreaker_save_boundaries', function () {
-  $nonce = isset($_POST['_ajax_nonce']) ? (string) wp_unslash($_POST['_ajax_nonce']) : '';
-  if (!wp_verify_nonce($nonce, 'sunstreaker_boundaries')) {
-    wp_send_json_error(['message' => 'Bad nonce'], 403);
-  }
-
   $product_id = absint($_POST['product_id'] ?? 0);
   if ($product_id <= 0 || get_post_type($product_id) !== 'product') {
     wp_send_json_error(['message' => 'Invalid product'], 400);
   }
-  if (!sunstreaker_can_edit_product_boundaries($product_id)) {
+  $nonce = isset($_POST['_ajax_nonce']) ? (string) wp_unslash($_POST['_ajax_nonce']) : '';
+  if (!sunstreaker_boundary_request_is_authorized($product_id, $nonce)) {
     wp_send_json_error(['message' => 'Unauthorized'], 403);
   }
 
   $defaults = sunstreaker_default_preview_boundaries();
   $boundaries = sunstreaker_get_preview_boundaries($product_id);
+  $posted_boundaries = [];
+  if (isset($_POST['boundaries'])) {
+    $raw_boundaries = wp_unslash($_POST['boundaries']);
+    $decoded_boundaries = is_string($raw_boundaries) && $raw_boundaries !== '' ? json_decode($raw_boundaries, true) : $raw_boundaries;
+    if (is_array($decoded_boundaries)) {
+      $posted_boundaries = $decoded_boundaries;
+    }
+  }
+
   foreach ($defaults as $key => $fallback) {
-    if (!array_key_exists($key, $_POST)) {
+    $has_compact_value = array_key_exists($key, $posted_boundaries);
+    $has_legacy_value = array_key_exists($key, $_POST);
+    if (!$has_compact_value && !$has_legacy_value) {
       if (!isset($boundaries[$key]) || !is_array($boundaries[$key])) {
         $boundaries[$key] = sunstreaker_sanitize_boundary_rect([], $fallback);
       }
       continue;
     }
-    $raw = isset($_POST[$key]) ? wp_unslash($_POST[$key]) : '';
+    $raw = $has_compact_value ? $posted_boundaries[$key] : (isset($_POST[$key]) ? wp_unslash($_POST[$key]) : '');
     $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : $raw;
     $boundaries[$key] = sunstreaker_sanitize_boundary_rect($decoded, $fallback);
     update_post_meta($product_id, '_sunstreaker_'.$key.'_boundary', wp_json_encode($boundaries[$key]));

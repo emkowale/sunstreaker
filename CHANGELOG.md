@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.39] - 2026-07-09
+
+### Changes
+* chore(release): v0.1.38 (5e41d39)
+
+
 ## [0.1.38] - 2026-07-09
 
 ### Changes

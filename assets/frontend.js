@@ -2354,7 +2354,7 @@
   }
 
   function ajaxBody(action, extra) {
-    var body = new FormData();
+    var body = new URLSearchParams();
     body.append('action', action);
     body.append('_ajax_nonce', settings.nonce || '');
     body.append('product_id', String(settings.productId || ''));
@@ -2362,6 +2362,24 @@
       body.append(key, extra[key]);
     });
     return body;
+  }
+
+  function boundaryAjaxUrl() {
+    var raw = settings.ajaxUrl || '/wp-admin/admin-ajax.php';
+    var url;
+
+    try {
+      url = new URL(raw, window.location.href);
+      if (window.location.protocol === 'https:' && url.protocol === 'http:' && url.host === window.location.host) {
+        url.protocol = 'https:';
+      }
+      if (url.origin === window.location.origin) {
+        return url.pathname + url.search;
+      }
+      return url.href;
+    } catch (error) {
+      return raw;
+    }
   }
 
   function parseResponse(response) {
@@ -2374,12 +2392,42 @@
     });
   }
 
-  function fetchBoundaries() {
-    return fetch(settings.ajaxUrl, {
+  function boundaryRequest(action, extra) {
+    return fetch(boundaryAjaxUrl(), {
       method: 'POST',
       credentials: 'same-origin',
-      body: ajaxBody('sunstreaker_get_boundaries')
-    }).then(parseResponse).then(function (data) {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: ajaxBody(action, extra)
+    });
+  }
+
+  function refreshBoundaryNonce() {
+    return boundaryRequest('sunstreaker_boundary_nonce').then(parseResponse).then(function (data) {
+      if (data && data.nonce) {
+        settings.nonce = String(data.nonce);
+      }
+      return settings.nonce || '';
+    });
+  }
+
+  function parseBoundaryResponseWithRetry(response, retry) {
+    return parseResponse(response).catch(function (error) {
+      var message = error && error.message ? String(error.message) : '';
+      if (!retry || message.toLowerCase().indexOf('nonce') === -1) throw error;
+      return refreshBoundaryNonce().then(function () {
+        return retry().then(parseResponse);
+      });
+    });
+  }
+
+  function fetchBoundaries() {
+    return boundaryRequest('sunstreaker_get_boundaries').then(function (response) {
+      return parseBoundaryResponseWithRetry(response, function () {
+        return boundaryRequest('sunstreaker_get_boundaries');
+      });
+    }).then(function (data) {
       return normalizeBoundaries(data.boundaries || defaults);
     });
   }
@@ -2387,14 +2435,18 @@
   function saveBoundaries() {
     var payload = {};
     boundaryKeys.forEach(function (field) {
-      payload[field] = JSON.stringify(state.boundaries[field]);
+      payload[field] = state.boundaries[field];
     });
 
-    return fetch(settings.ajaxUrl, {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: ajaxBody('sunstreaker_save_boundaries', payload)
-    }).then(parseResponse).then(function (data) {
+    return boundaryRequest('sunstreaker_save_boundaries', {
+        boundaries: JSON.stringify(payload)
+      }).then(function (response) {
+      return parseBoundaryResponseWithRetry(response, function () {
+        return boundaryRequest('sunstreaker_save_boundaries', {
+          boundaries: JSON.stringify(payload)
+        });
+      });
+    }).then(function (data) {
       return normalizeBoundaries(data.boundaries || state.boundaries);
     });
   }

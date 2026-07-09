@@ -263,7 +263,7 @@ add_filter('woocommerce_add_cart_item_data', function ($cart_item_data, $product
       'number' => '',
       'right_chest_name_credentials' => '',
       'right_chest_department' => '',
-      'font_choice' => function_exists('sunstreaker_get_font_choice_key') ? sunstreaker_get_font_choice_key($product_id) : 'varsity_block',
+      'font_choice' => 'varsity_block',
       'font_stack' => function_exists('sunstreaker_get_font_stack') ? sunstreaker_get_font_stack($product_id) : '"Varsity Block","Freshman","College","Oswald","Arial Black",sans-serif',
       'right_chest_font_choice' => function_exists('sunstreaker_get_right_chest_font_choice_key') ? sunstreaker_get_right_chest_font_choice_key($product_id) : 'clean_sans',
       'right_chest_font_stack' => function_exists('sunstreaker_get_right_chest_font_stack') ? sunstreaker_get_right_chest_font_stack($product_id) : '"Source Sans 3","Helvetica Neue",Arial,sans-serif',

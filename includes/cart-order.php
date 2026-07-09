@@ -751,14 +751,39 @@ function sunstreaker_prepare_logo_urls(array $args): array {
   return $logo_urls;
 }
 
+function sunstreaker_prepare_logo_location_entries(array $args): array {
+  $entries = [];
+  $raw_entries = !empty($args['logo_location_entries']) && is_array($args['logo_location_entries'])
+    ? $args['logo_location_entries']
+    : [];
+
+  foreach ($raw_entries as $entry) {
+    if (!is_array($entry)) continue;
+
+    $location_key = isset($entry['location_key']) ? sanitize_key((string) $entry['location_key']) : '';
+    $field = isset($entry['field']) ? sanitize_key((string) $entry['field']) : '';
+    $url = isset($entry['url']) ? esc_url_raw((string) $entry['url']) : '';
+    if ($field === '' && $location_key !== '') $field = 'logo_'.$location_key;
+    if ($field === '' || $url === '') continue;
+
+    $entries[] = [
+      'field' => $field,
+      'url' => $url,
+    ];
+  }
+
+  return $entries;
+}
+
 function sunstreaker_has_renderable_preview_data(array $args): bool {
   $name = trim((string) ($args['name'] ?? ''));
   $number = trim((string) ($args['number'] ?? ''));
   $right_chest_name = trim((string) ($args['right_chest_name_credentials'] ?? ''));
   $right_chest_department = trim((string) ($args['right_chest_department'] ?? ''));
   $logo_urls = sunstreaker_prepare_logo_urls($args);
+  $logo_location_entries = sunstreaker_prepare_logo_location_entries($args);
 
-  return !($name === '' && $number === '' && $right_chest_name === '' && $right_chest_department === '' && empty($logo_urls));
+  return !($name === '' && $number === '' && $right_chest_name === '' && $right_chest_department === '' && empty($logo_urls) && empty($logo_location_entries));
 }
 
 function sunstreaker_render_composite_svg(array $args): string {
@@ -769,6 +794,7 @@ function sunstreaker_render_composite_svg(array $args): string {
   $right_chest_department = trim((string) ($args['right_chest_department'] ?? ''));
   $has_right_chest_text = ($right_chest_name !== '' || $right_chest_department !== '');
   $logo_urls = sunstreaker_prepare_logo_urls($args);
+  $logo_location_entries = sunstreaker_prepare_logo_location_entries($args);
 
   if (!sunstreaker_has_renderable_preview_data([
     'name' => $name,
@@ -776,6 +802,7 @@ function sunstreaker_render_composite_svg(array $args): string {
     'right_chest_name_credentials' => $right_chest_name,
     'right_chest_department' => $right_chest_department,
     'logo_urls' => $logo_urls,
+    'logo_location_entries' => $logo_location_entries,
   ])) {
     return '';
   }
@@ -854,6 +881,18 @@ function sunstreaker_render_composite_svg(array $args): string {
       $svg .= '<image href="'.esc_attr($logo_url).'" x="'.esc_attr(number_format($slot['x'] + $pad_x, 4, '.', '')).'" y="'.esc_attr(number_format($slot['y'] + $pad_y, 4, '.', '')).'" width="'.esc_attr(number_format(max(1.0, $slot['w'] - ($pad_x * 2)), 4, '.', '')).'" height="'.esc_attr(number_format(max(1.0, $slot['h'] - ($pad_y * 2)), 4, '.', '')).'" preserveAspectRatio="xMidYMid meet" />';
     }
   }
+
+  foreach ($logo_location_entries as $entry) {
+    $field = (string) ($entry['field'] ?? '');
+    $logo_url = (string) ($entry['url'] ?? '');
+    if ($field === '' || $logo_url === '' || empty($boundaries[$field])) continue;
+
+    $logo_box = sunstreaker_cart_boundary_box($boundaries[$field], $reference_width, $reference_height);
+    $pad_x = $logo_box['w'] * 0.02;
+    $pad_y = $logo_box['h'] * 0.02;
+    $svg .= '<image href="'.esc_attr($logo_url).'" x="'.esc_attr(number_format($logo_box['x'] + $pad_x, 4, '.', '')).'" y="'.esc_attr(number_format($logo_box['y'] + $pad_y, 4, '.', '')).'" width="'.esc_attr(number_format(max(1.0, $logo_box['w'] - ($pad_x * 2)), 4, '.', '')).'" height="'.esc_attr(number_format(max(1.0, $logo_box['h'] - ($pad_y * 2)), 4, '.', '')).'" preserveAspectRatio="xMidYMid meet" />';
+  }
+
 
   if (!empty($name_number_layer_map['sunstreaker-name'])) {
     $svg .= $render_name_number_layer($name_number_layer_map['sunstreaker-name'], $font_stack, $ink_color);
@@ -1011,11 +1050,35 @@ function sunstreaker_get_product_thumbnail_preview_data(int $settings_product_id
     'right_chest_name_credentials' => '',
     'right_chest_department' => '',
     'logo_urls' => [],
+    'logo_location_entries' => [],
   ];
 
   if (function_exists('sunstreaker_uses_name_number') && sunstreaker_uses_name_number($settings_product_id)) {
     $data['name'] = (string) $defaults['name'];
     $data['number'] = (string) $defaults['number'];
+  }
+
+  if (function_exists('sunstreaker_uses_logos') && sunstreaker_uses_logos($settings_product_id)) {
+    $logo_locations = function_exists('sunstreaker_get_enabled_logo_location_settings')
+      ? sunstreaker_get_enabled_logo_location_settings($settings_product_id)
+      : [];
+
+    foreach ($logo_locations as $location_key => $location_settings) {
+      $default_logo_id = !empty($location_settings['default_logo_id']) ? absint($location_settings['default_logo_id']) : 0;
+      if ($default_logo_id <= 0) continue;
+
+      $choice = function_exists('sunstreaker_get_logo_choice')
+        ? sunstreaker_get_logo_choice($settings_product_id, $default_logo_id)
+        : [];
+      $preview_url = !empty($choice['preview_url']) ? esc_url_raw((string) $choice['preview_url']) : '';
+      if ($preview_url === '') continue;
+
+      $data['logo_location_entries'][] = [
+        'location_key' => (string) $location_key,
+        'field' => 'logo_'.sanitize_key((string) $location_key),
+        'url' => $preview_url,
+      ];
+    }
   }
 
   return $data;
@@ -1086,6 +1149,7 @@ function sunstreaker_render_product_thumbnail($product, $size = 'woocommerce_thu
     'right_chest_name_credentials' => $preview_data['right_chest_name_credentials'],
     'right_chest_department' => $preview_data['right_chest_department'],
     'logo_urls' => $preview_data['logo_urls'],
+    'logo_location_entries' => $preview_data['logo_location_entries'] ?? [],
     'svg_class' => 'sunstreaker-product-thumb__svg',
     'aria_label' => sprintf(__('Customized preview of %s', 'sunstreaker'), $label_source),
   ]);
@@ -1199,8 +1263,8 @@ add_filter('woocommerce_add_to_cart_validation', function($passed, $product_id, 
     wc_add_notice(__('Name must be 20 characters or less.', 'sunstreaker'), 'error');
     return false;
   }
-  if ($has_text_personalization && !preg_match('/^[0-9]{2}$/', $num)) {
-    wc_add_notice(__('Number must be two digits (00–99).', 'sunstreaker'), 'error');
+  if ($has_text_personalization && !preg_match('/^[0-9]{1,2}$/', $num)) {
+    wc_add_notice(__('Number must be one or two digits (0–99).', 'sunstreaker'), 'error');
     return false;
   }
   if ($scrubs_choice === 'yes' && !empty($scrub_fields)) {
@@ -1221,9 +1285,7 @@ add_filter('woocommerce_add_cart_item_data', function($cart_item_data, $product_
   $num  = sunstreaker_get_posted_number();
   $right_chest_name = function_exists('sunstreaker_get_posted_right_chest_name_credentials') ? sunstreaker_get_posted_right_chest_name_credentials() : '';
   $right_chest_department = function_exists('sunstreaker_get_posted_right_chest_department') ? sunstreaker_get_posted_right_chest_department() : '';
-  $font_choice = function_exists('sunstreaker_get_posted_font_choice_key')
-    ? sunstreaker_get_posted_font_choice_key($product_id)
-    : (function_exists('sunstreaker_get_font_choice_key') ? sunstreaker_get_font_choice_key($product_id) : 'varsity_block');
+  $font_choice = 'varsity_block';
   $right_chest_font_choice = function_exists('sunstreaker_get_posted_right_chest_font_choice_key')
     ? sunstreaker_get_posted_right_chest_font_choice_key($product_id)
     : (function_exists('sunstreaker_get_right_chest_font_choice_key') ? sunstreaker_get_right_chest_font_choice_key($product_id) : 'montserrat');
@@ -1281,7 +1343,7 @@ add_filter('woocommerce_add_cart_item_data', function($cart_item_data, $product_
     'right_chest_department' => $right_chest_department,
     'font_choice' => $font_choice,
     'font_stack' => function_exists('sunstreaker_get_font_stack_from_choice_key')
-      ? sunstreaker_get_font_stack_from_choice_key($font_choice, function_exists('sunstreaker_get_font_choice_key') ? sunstreaker_get_font_choice_key($product_id) : 'varsity_block')
+      ? sunstreaker_get_font_stack_from_choice_key($font_choice, 'varsity_block')
       : (function_exists('sunstreaker_get_font_stack') ? sunstreaker_get_font_stack($product_id) : '"Varsity Block","Freshman","College","Oswald","Arial Black",sans-serif'),
     'right_chest_font_choice' => $right_chest_font_choice,
     'right_chest_font_stack' => function_exists('sunstreaker_get_font_stack_from_choice_key')
@@ -1439,6 +1501,9 @@ add_filter('woocommerce_cart_item_thumbnail', function($thumbnail, $cart_item, $
 add_filter('woocommerce_product_get_image', function($image_html, $product, $size, $attr, $placeholder, $original_image){
   if (!$product || !is_a($product, 'WC_Product')) return $image_html;
   if (is_admin() && !wp_doing_ajax()) return $image_html;
+  if (function_exists('is_product') && is_product() && function_exists('get_queried_object_id') && (int) get_queried_object_id() === (int) $product->get_id()) {
+    return $image_html;
+  }
 
   $preview = sunstreaker_render_product_thumbnail($product, $size);
   return $preview !== '' ? $preview : $image_html;

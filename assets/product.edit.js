@@ -3,6 +3,7 @@ jQuery(function($){
   var fontConfig = config.fonts || {};
   var strings = config.strings || {};
   var selectedLogosByLocation = $.isPlainObject(config.selectedLogosByLocation) ? $.extend(true, {}, config.selectedLogosByLocation) : {};
+  var defaultLogoIdsByLocation = $.isPlainObject(config.defaultLogoIdsByLocation) ? $.extend({}, config.defaultLogoIdsByLocation) : {};
   var mediaFrame = null;
   var activeLocationKey = '';
 
@@ -96,18 +97,41 @@ jQuery(function($){
     return Array.isArray(selectedLogosByLocation[locationKey]) ? selectedLogosByLocation[locationKey] : [];
   }
 
+  function defaultLogoIdForLocation(locationKey){
+    var id = Number(defaultLogoIdsByLocation[locationKey] || 0);
+    return id > 0 ? id : 0;
+  }
+
+  function normalizeDefaultLogo(locationKey){
+    var logos = logosForLocation(locationKey);
+    var defaultLogoId = defaultLogoIdForLocation(locationKey);
+    var hasDefault = logos.some(function(logo){
+      return logo && Number(logo.id) === defaultLogoId;
+    });
+
+    if (!hasDefault) {
+      defaultLogoIdsByLocation[locationKey] = 0;
+    }
+  }
+
   function setHiddenLogoIds(locationKey){
     $('.sunstreaker-logo-library__input[data-location-key="' + locationKey + '"]').val(
       logosForLocation(locationKey).map(function(logo){ return logo.id; }).join(',')
+    );
+    $('.sunstreaker-logo-library__default-input[data-location-key="' + locationKey + '"]').val(
+      defaultLogoIdForLocation(locationKey) ? String(defaultLogoIdForLocation(locationKey)) : ''
     );
   }
 
   function renderLogoList(locationKey){
     var logos = logosForLocation(locationKey);
+    var defaultLogoId;
     var $list = $('.sunstreaker-logo-library__list[data-location-key="' + locationKey + '"]');
     var $clear = $('.sunstreaker-logo-library__clear[data-location-key="' + locationKey + '"]');
     if (!$list.length) return;
 
+    normalizeDefaultLogo(locationKey);
+    defaultLogoId = defaultLogoIdForLocation(locationKey);
     $list.empty();
 
     if (!logos.length) {
@@ -123,8 +147,9 @@ jQuery(function($){
     }
 
     logos.forEach(function(logo){
+      var isDefault = Number(logo.id) === defaultLogoId;
       var $item = $('<li/>', {
-        'class': 'sunstreaker-logo-library__item',
+        'class': 'sunstreaker-logo-library__item' + (isDefault ? ' is-default' : ''),
         'data-logo-id': String(logo.id),
         'data-location-key': locationKey
       });
@@ -141,6 +166,21 @@ jQuery(function($){
         'class': 'sunstreaker-logo-library__title',
         text: logo.title
       }));
+
+      if (isDefault) {
+        $item.append($('<span/>', {
+          'class': 'sunstreaker-logo-library__default-badge',
+          text: strings.defaultLogo || 'Default'
+        }));
+      } else {
+        $item.append($('<button/>', {
+          type: 'button',
+          'class': 'button sunstreaker-logo-library__default',
+          'data-logo-id': String(logo.id),
+          'data-location-key': locationKey,
+          text: strings.setDefaultLogo || 'Set default'
+        }));
+      }
 
       $item.append($('<button/>', {
         type: 'button',
@@ -223,6 +263,20 @@ jQuery(function($){
     selectedLogosByLocation[locationKey] = logosForLocation(locationKey).filter(function(logo){
       return logo.id !== logoId;
     });
+    if (defaultLogoIdForLocation(locationKey) === logoId) {
+      defaultLogoIdsByLocation[locationKey] = 0;
+    }
+    renderLogoList(locationKey);
+  });
+
+  $(document).on('click', '.sunstreaker-logo-library__default', function(event){
+    var logoId;
+    var locationKey = String($(this).data('locationKey') || '');
+    event.preventDefault();
+    if (!locationKey) return;
+    logoId = Number($(this).data('logoId'));
+    if (!logoId) return;
+    defaultLogoIdsByLocation[locationKey] = logoId;
     renderLogoList(locationKey);
   });
 
@@ -231,6 +285,7 @@ jQuery(function($){
     event.preventDefault();
     if (!locationKey) return;
     selectedLogosByLocation[locationKey] = [];
+    defaultLogoIdsByLocation[locationKey] = 0;
     renderLogoList(locationKey);
   });
 

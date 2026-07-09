@@ -323,11 +323,9 @@ fi
 if [[ "$GIT_OK" -eq 1 ]]; then
   step "Committing & tagging"
   if git rev-parse --verify HEAD >/dev/null 2>&1; then
-    git add "$MAIN_PATH"
-    git add "$UPDATE_MANIFEST"
-    git add "$CHANGELOG"
+    git add -A -- ':!artifacts' ':!artifacts/**' ':!package' ':!package/**'
   else
-    git add -A
+    git add -A -- ':!artifacts' ':!artifacts/**' ':!package' ':!package/**'
   fi
   git commit -m "chore(release): v${NEXT}" >/dev/null 2>&1 || warn "Nothing to commit (files already updated)"
   git rev-parse --verify HEAD >/dev/null 2>&1 || die "Unable to create a git commit; cannot tag/push."

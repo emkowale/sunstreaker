@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.41] - 2026-08-04
+
+### Changes
+* chore: bootstrap release checkout (e5449bc)
+* chore(release): v0.1.40 (f446df3)
+
+
 ## [0.1.40] - 2026-07-09
 
 ### Changes

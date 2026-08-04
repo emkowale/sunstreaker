@@ -99,6 +99,17 @@ function sunstreaker_sync_generated_original_art_meta($item, string $png_url, st
     $item->delete_meta_data($eps_key);
   }
 
+  // Keep the legacy key populated for Soundwave versions that predate the
+  // discrete PNG/EPS artwork fields.
+  $legacy_key = 'Original Art '.$label;
+  $legacy_url = $prefer_eps ? $eps_url : $png_url;
+  if ($legacy_url === '') $legacy_url = $eps_url !== '' ? $eps_url : $png_url;
+  if ($legacy_url !== '') {
+    $item->update_meta_data($legacy_key, esc_url_raw($legacy_url));
+  } else {
+    $item->delete_meta_data($legacy_key);
+  }
+
   if ($png_url !== '' || $eps_url !== '') {
     sunstreaker_order_item_sync_print_location($item, [$label]);
   }

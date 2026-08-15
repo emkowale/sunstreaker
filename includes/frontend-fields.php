@@ -553,7 +553,7 @@ add_action('woocommerce_before_add_to_cart_button', function(){
       echo '      </div>';
       echo '      <div class="sunstreaker-logo-location-option__controls">';
       echo '        <select class="sunstreaker-select sunstreaker-logo-location-option__select" id="sunstreaker_logo_location_logo_id_'.esc_attr($location_key).'" name="sunstreaker_logo_location_logo_id['.esc_attr($location_key).']" data-logo-location-select="'.esc_attr($location_key).'" data-location-label="'.esc_attr($location_label).'">';
-      echo '          <option value="">'.esc_html__('Choose a logo', 'sunstreaker').'</option>';
+      echo '          <option value="">'.esc_html__('No Design', 'sunstreaker').'</option>';
       foreach ($location_logo_choices as $logo) {
         $logo_id = isset($logo['id']) ? (int) $logo['id'] : 0;
         if ($logo_id <= 0) continue;

@@ -1475,13 +1475,20 @@
     selectedValue = String(dropdown.native && dropdown.native.value ? dropdown.native.value : '');
     dropdown.trigger.innerHTML = '';
     dropdown.trigger.classList.remove('has-thumbnail');
+    dropdown.trigger.classList.toggle('is-no-design', selectedValue === '');
 
     if (!selectedValue) {
       placeholder = document.createElement('span');
-      placeholder.className = 'sunstreaker-logo-select__trigger-text';
-      placeholder.textContent = currentLogoTriggerLabel(dropdown.native);
+      placeholder.className = 'sunstreaker-logo-select__thumb-frame sunstreaker-logo-select__trigger-thumb-frame sunstreaker-logo-select__thumb-frame--no-design';
+      placeholder.appendChild((function () {
+        var text = document.createElement('span');
+        text.className = 'sunstreaker-logo-select__no-design';
+        text.textContent = currentLogoTriggerLabel(dropdown.native);
+        return text;
+      }()));
+      dropdown.trigger.classList.add('has-thumbnail');
       dropdown.trigger.appendChild(placeholder);
-      dropdown.trigger.title = placeholder.textContent;
+      dropdown.trigger.title = currentLogoTriggerLabel(dropdown.native);
       return;
     }
 
@@ -1593,20 +1600,14 @@
       }
 
       if (thumbUrl === '') {
+        optionEl.classList.add('sunstreaker-logo-select__option--thumb-only', 'sunstreaker-logo-select__option--no-design');
         textWrap = document.createElement('span');
-        textWrap.className = 'sunstreaker-logo-select__text';
+        textWrap.className = 'sunstreaker-logo-select__thumb-frame sunstreaker-logo-select__thumb-frame--no-design';
 
         primary = document.createElement('span');
-        primary.className = 'sunstreaker-logo-select__primary';
+        primary.className = 'sunstreaker-logo-select__no-design';
         primary.textContent = logo ? filename : label;
         textWrap.appendChild(primary);
-
-        if (logo && title !== '' && title !== filename) {
-          secondary = document.createElement('span');
-          secondary.className = 'sunstreaker-logo-select__secondary';
-          secondary.textContent = title;
-          textWrap.appendChild(secondary);
-        }
 
         optionEl.appendChild(textWrap);
       }

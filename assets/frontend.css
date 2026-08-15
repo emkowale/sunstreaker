@@ -269,6 +269,10 @@
   padding: 12px 18px 14px;
   text-align: center;
 }
+.sunstreaker-logo-select__option--no-design{
+  min-height: 118px;
+  padding: 12px 18px 14px;
+}
 .sunstreaker-logo-select__option:hover,
 .sunstreaker-logo-select__option:focus,
 .sunstreaker-logo-select__option.is-selected{
@@ -315,6 +319,12 @@
   min-height: 60px;
   padding: 8px 12px;
 }
+.sunstreaker-logo-select__thumb-frame--no-design{
+  min-height: 72px;
+}
+.single-product form.cart .sunstreaker-logo-location-option__controls .sunstreaker-logo-select__trigger.is-no-design .sunstreaker-logo-select__trigger-thumb-frame{
+  min-height: 60px;
+}
 .sunstreaker-logo-select__trigger-thumb{
   max-width: min(100%, 320px);
   max-height: 60px;
@@ -355,6 +365,19 @@
 .sunstreaker-logo-select__secondary{
   color: #666;
   font-size: 13px;
+}
+.sunstreaker-logo-select__no-design{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 10px 12px;
+  color: #1f1f1f;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
 }
 .sunstreaker-art-upload__actions{
   display: flex;

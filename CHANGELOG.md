@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.45] - 2026-08-15
+
+### Changes
+* chore(release): v0.1.44 (f6f50e4)
+
+
 ## [0.1.44] - 2026-08-04
 
 ### Changes

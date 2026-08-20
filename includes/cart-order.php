@@ -1064,11 +1064,8 @@ function sunstreaker_get_product_thumbnail_preview_data(int $settings_product_id
       : [];
 
     foreach ($logo_locations as $location_key => $location_settings) {
-      $default_logo_id = !empty($location_settings['default_logo_id']) ? absint($location_settings['default_logo_id']) : 0;
-      if ($default_logo_id <= 0) continue;
-
-      $choice = function_exists('sunstreaker_get_logo_choice')
-        ? sunstreaker_get_logo_choice($settings_product_id, $default_logo_id)
+      $choice = function_exists('sunstreaker_get_preview_logo_location_choice')
+        ? sunstreaker_get_preview_logo_location_choice($settings_product_id, (string) $location_key)
         : [];
       $preview_url = !empty($choice['preview_url']) ? esc_url_raw((string) $choice['preview_url']) : '';
       if ($preview_url === '') continue;
@@ -1244,13 +1241,14 @@ add_filter('woocommerce_add_to_cart_validation', function($passed, $product_id, 
   $logo_location_choices = (function_exists('sunstreaker_uses_logos') && sunstreaker_uses_logos($product_id) && function_exists('sunstreaker_get_posted_logo_location_choices'))
     ? sunstreaker_get_posted_logo_location_choices($product_id)
     : [];
-  $logo_ids = array_values(array_map('absint', array_column($logo_location_choices, 'logo_id')));
+  $logo_ids = array_values(array_filter(array_map('strval', array_column($logo_location_choices, 'logo_id'))));
 
   // Personalization is optional; only validate when either field is provided.
   if (!$has_text_personalization && !$has_right_chest_text && empty($logo_ids) && $scrubs_choice !== 'yes') return $passed;
   foreach ($logo_location_choices as $logo_location_choice) {
-    $logo_id = isset($logo_location_choice['logo_id']) ? (int) $logo_location_choice['logo_id'] : 0;
-    if (!function_exists('sunstreaker_is_allowed_logo') || !sunstreaker_is_allowed_logo($product_id, $logo_id)) {
+    $logo_id = isset($logo_location_choice['logo_id']) ? (string) $logo_location_choice['logo_id'] : '';
+    if (function_exists('sunstreaker_is_no_design_logo_token') && sunstreaker_is_no_design_logo_token($logo_id)) continue;
+    if (!function_exists('sunstreaker_is_allowed_logo') || !sunstreaker_is_allowed_logo($product_id, absint($logo_id))) {
       wc_add_notice(__('Choose a valid logo from the list.', 'sunstreaker'), 'error');
       return false;
     }
@@ -1297,7 +1295,7 @@ add_filter('woocommerce_add_cart_item_data', function($cart_item_data, $product_
   $logo_location_choices = (function_exists('sunstreaker_uses_logos') && sunstreaker_uses_logos($product_id) && function_exists('sunstreaker_get_posted_logo_location_choices'))
     ? sunstreaker_get_posted_logo_location_choices($product_id)
     : [];
-  $logo_ids = array_values(array_map('absint', array_column($logo_location_choices, 'logo_id')));
+  $logo_ids = array_values(array_filter(array_map('strval', array_column($logo_location_choices, 'logo_id'))));
   $has_text_personalization = $use_name_number && !($name === '' && $num === '');
   $has_right_chest_text = $use_right_chest && !($right_chest_name === '' && $right_chest_department === '');
   $has_scrubs = ($scrubs_choice === 'yes' && !empty($scrub_values));
@@ -1377,9 +1375,9 @@ add_filter('woocommerce_add_cart_item_data', function($cart_item_data, $product_
   }
   if (!empty($logo_choices)) {
     $cart_item_data['sunstreaker']['logo_locations'] = [];
-    $cart_item_data['sunstreaker']['logo_ids'] = array_values(array_map('absint', array_column($logo_choices, 'id')));
+    $cart_item_data['sunstreaker']['logo_ids'] = array_values(array_map('strval', array_column($logo_choices, 'id')));
     $cart_item_data['sunstreaker']['logo_labels'] = [];
-    $cart_item_data['sunstreaker']['logo_urls'] = array_values(array_map('strval', array_column($logo_choices, 'preview_url')));
+    $cart_item_data['sunstreaker']['logo_urls'] = array_values(array_filter(array_map('strval', array_column($logo_choices, 'preview_url'))));
     foreach ($logo_choices as $logo_choice) {
       $location_label = isset($logo_choice['location_label']) ? trim((string) $logo_choice['location_label']) : '';
       $logo_title = isset($logo_choice['title']) ? (string) $logo_choice['title'] : '';
@@ -1388,14 +1386,15 @@ add_filter('woocommerce_add_cart_item_data', function($cart_item_data, $product_
       $cart_item_data['sunstreaker']['logo_locations'][] = [
         'location_key' => (string) ($logo_choice['location_key'] ?? ''),
         'location_label' => $location_label,
-        'logo_id' => (int) ($logo_choice['id'] ?? 0),
+        'logo_id' => (string) ($logo_choice['id'] ?? ''),
         'logo_label' => $logo_title,
         'logo_url' => (string) ($logo_choice['preview_url'] ?? ''),
+        'is_no_design' => !empty($logo_choice['is_no_design']),
         'production' => (string) ($logo_choice['production'] ?? ''),
         'price' => isset($logo_choice['price']) ? (float) $logo_choice['price'] : 0.0,
       ];
     }
-    $cart_item_data['sunstreaker']['logo_id'] = (int) ($cart_item_data['sunstreaker']['logo_ids'][0] ?? 0);
+    $cart_item_data['sunstreaker']['logo_id'] = (string) ($cart_item_data['sunstreaker']['logo_ids'][0] ?? '');
     $cart_item_data['sunstreaker']['logo_label'] = implode(', ', $cart_item_data['sunstreaker']['logo_labels']);
     $cart_item_data['sunstreaker']['logo_url'] = (string) ($cart_item_data['sunstreaker']['logo_urls'][0] ?? '');
   }
@@ -1608,9 +1607,9 @@ add_action('woocommerce_checkout_create_order_line_item', function($item, $cart_
     $item->add_meta_data('_sunstreaker_logo_locations', wp_json_encode($ss['logo_locations']), true);
   }
   if (!empty($ss['logo_ids']) && is_array($ss['logo_ids'])) {
-    $item->add_meta_data('_sunstreaker_logo_ids', implode(',', array_map('absint', $ss['logo_ids'])), true);
+    $item->add_meta_data('_sunstreaker_logo_ids', implode(',', array_map('strval', $ss['logo_ids'])), true);
   } elseif (!empty($ss['logo_id'])) {
-    $item->add_meta_data('_sunstreaker_logo_id', (int) $ss['logo_id'], true);
+    $item->add_meta_data('_sunstreaker_logo_id', wc_clean((string) $ss['logo_id']), true);
   }
   if (!empty($ss['logo_labels']) && is_array($ss['logo_labels'])) {
     $item->add_meta_data('_sunstreaker_logo_labels', wp_json_encode(array_values(array_map('wc_clean', $ss['logo_labels']))), true);

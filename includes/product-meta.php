@@ -105,7 +105,7 @@ function sunstreaker_default_logo_location_settings(string $location_key = ''): 
     'price' => '14.00',
     'production' => 'Embroidery',
     'logo_ids' => [],
-    'default_logo_id' => 0,
+    'default_logo_id' => '',
   ];
 
   if ($location_key === '' || !isset(sunstreaker_logo_print_locations()[$location_key])) {
@@ -113,6 +113,26 @@ function sunstreaker_default_logo_location_settings(string $location_key = ''): 
   }
 
   return $defaults;
+}
+
+function sunstreaker_no_design_logo_token(): string {
+  return '__none__';
+}
+
+function sunstreaker_is_no_design_logo_token($value): bool {
+  return is_string($value) && trim($value) === sunstreaker_no_design_logo_token();
+}
+
+function sunstreaker_no_design_logo_choice(): array {
+  return [
+    'id' => sunstreaker_no_design_logo_token(),
+    'title' => __('No Design', 'sunstreaker'),
+    'filename' => '',
+    'preview_url' => '',
+    'thumb_url' => '',
+    'alt' => '',
+    'is_no_design' => true,
+  ];
 }
 
 function sunstreaker_sanitize_logo_location_settings_entry($raw, string $location_key): array {
@@ -129,11 +149,8 @@ function sunstreaker_sanitize_logo_location_settings_entry($raw, string $locatio
     $raw['production'] ?? '',
     (string) $defaults['production']
   );
-  $logo_ids = sunstreaker_sanitize_logo_ids($raw['logo_ids'] ?? []);
-  $default_logo_id = absint($raw['default_logo_id'] ?? 0);
-  if ($default_logo_id > 0 && !in_array($default_logo_id, $logo_ids, true)) {
-    $default_logo_id = 0;
-  }
+  $logo_ids = sunstreaker_sanitize_logo_tokens($raw['logo_ids'] ?? []);
+  $default_logo_id = sunstreaker_sanitize_default_logo_token($raw['default_logo_id'] ?? '', $logo_ids);
 
   return [
     'enabled' => $enabled,
@@ -599,6 +616,16 @@ function sunstreaker_get_feature_production_method($product_id, string $feature)
 }
 
 function sunstreaker_sanitize_logo_ids($raw): array {
+  $ids = [];
+  foreach (sunstreaker_sanitize_logo_tokens($raw) as $token) {
+    $id = absint($token);
+    if ($id > 0) $ids[] = $id;
+  }
+
+  return array_values(array_unique($ids));
+}
+
+function sunstreaker_sanitize_logo_tokens($raw): array {
   if (is_string($raw)) {
     $trimmed = trim($raw);
     if ($trimmed !== '' && $trimmed[0] === '[') {
@@ -615,16 +642,31 @@ function sunstreaker_sanitize_logo_ids($raw): array {
 
   if (!is_array($raw)) return [];
 
-  $ids = [];
+  $tokens = [];
   foreach ($raw as $value) {
+    if (sunstreaker_is_no_design_logo_token($value)) {
+      $tokens[] = sunstreaker_no_design_logo_token();
+      continue;
+    }
     $id = absint($value);
     if ($id <= 0) continue;
     $mime = (string) get_post_mime_type($id);
     if ($mime === '' || stripos($mime, 'image/') !== 0) continue;
-    $ids[] = $id;
+    $tokens[] = (string) $id;
   }
 
-  return array_values(array_unique($ids));
+  return array_values(array_unique($tokens));
+}
+
+function sunstreaker_sanitize_default_logo_token($value, array $logo_tokens): string {
+  if (sunstreaker_is_no_design_logo_token($value)) {
+    return in_array(sunstreaker_no_design_logo_token(), $logo_tokens, true) ? sunstreaker_no_design_logo_token() : '';
+  }
+
+  $id = absint($value);
+  if ($id <= 0) return '';
+  $token = (string) $id;
+  return in_array($token, $logo_tokens, true) ? $token : '';
 }
 
 function sunstreaker_get_logo_ids($product_id): array {
@@ -650,7 +692,7 @@ function sunstreaker_get_logo_location_ids($product_id, string $location_key): a
     return [];
   }
 
-  return array_values(array_map('absint', $settings[$location_key]['logo_ids']));
+  return array_values(array_map('strval', $settings[$location_key]['logo_ids']));
 }
 
 function sunstreaker_get_logo_choices($product_id): array {
@@ -683,7 +725,14 @@ function sunstreaker_get_logo_choices($product_id): array {
 function sunstreaker_get_logo_location_choices($product_id, string $location_key): array {
   $choices = [];
 
-  foreach (sunstreaker_get_logo_location_ids($product_id, $location_key) as $attachment_id) {
+  foreach (sunstreaker_get_logo_location_ids($product_id, $location_key) as $logo_token) {
+    if (sunstreaker_is_no_design_logo_token($logo_token)) {
+      $choices[] = sunstreaker_no_design_logo_choice();
+      continue;
+    }
+
+    $attachment_id = absint($logo_token);
+    if ($attachment_id <= 0) continue;
     $title = trim((string) get_the_title($attachment_id));
     $file_path = (string) get_attached_file($attachment_id);
     $filename = $file_path !== '' ? wp_basename($file_path) : '';
@@ -705,6 +754,26 @@ function sunstreaker_get_logo_location_choices($product_id, string $location_key
   }
 
   return $choices;
+}
+
+function sunstreaker_get_single_logo_location_choice($product_id, string $location_key): array {
+  $choices = sunstreaker_get_logo_location_choices($product_id, $location_key);
+  if (count($choices) !== 1) return [];
+  return is_array($choices[0]) ? $choices[0] : [];
+}
+
+function sunstreaker_get_preview_logo_location_choice($product_id, string $location_key): array {
+  $single_choice = sunstreaker_get_single_logo_location_choice($product_id, $location_key);
+  if (!empty($single_choice)) return $single_choice;
+
+  $location_settings = sunstreaker_get_logo_location_settings($product_id);
+  $default_logo_id = !empty($location_settings[$location_key]['default_logo_id'])
+    ? (string) $location_settings[$location_key]['default_logo_id']
+    : '';
+  if ($default_logo_id === '') return [];
+  if (sunstreaker_is_no_design_logo_token($default_logo_id)) return sunstreaker_no_design_logo_choice();
+
+  return sunstreaker_get_logo_choice($product_id, absint($default_logo_id));
 }
 
 function sunstreaker_get_logo_choice($product_id, int $logo_id): array {
@@ -1434,9 +1503,9 @@ add_action('woocommerce_product_options_general_product_data', function () {
     $location_label = (string) ($location['label'] ?? $location_key);
     $location_settings = $logo_location_settings[$location_key] ?? sunstreaker_default_logo_location_settings($location_key);
     $selected_logo_ids = !empty($location_settings['logo_ids']) && is_array($location_settings['logo_ids'])
-      ? array_values(array_map('absint', $location_settings['logo_ids']))
+      ? array_values(array_map('strval', $location_settings['logo_ids']))
       : [];
-    $default_logo_id = !empty($location_settings['default_logo_id']) ? absint($location_settings['default_logo_id']) : 0;
+    $default_logo_id = !empty($location_settings['default_logo_id']) ? (string) $location_settings['default_logo_id'] : '';
 
     echo '    <div class="sunstreaker-logo-location" data-location-key="'.esc_attr($location_key).'">';
     echo '      <label class="sunstreaker-logo-location__label">';
@@ -1464,8 +1533,9 @@ add_action('woocommerce_product_options_general_product_data', function () {
     echo '            <input type="hidden" id="_sunstreaker_logo_location_logo_ids_'.esc_attr($location_key).'" class="sunstreaker-logo-library__input" data-location-key="'.esc_attr($location_key).'" name="_sunstreaker_logo_location_logo_ids['.esc_attr($location_key).']" value="'.esc_attr(implode(',', $selected_logo_ids)).'" />';
     echo '            <input type="hidden" id="_sunstreaker_logo_location_default_logo_id_'.esc_attr($location_key).'" class="sunstreaker-logo-library__default-input" data-location-key="'.esc_attr($location_key).'" name="_sunstreaker_logo_location_default_logo_id['.esc_attr($location_key).']" value="'.esc_attr((string) $default_logo_id).'" />';
     echo '            <button type="button" class="button sunstreaker-logo-library__select" data-location-key="'.esc_attr($location_key).'">'.esc_html__('Select logos', 'sunstreaker').'</button>';
+    echo '            <button type="button" class="button sunstreaker-logo-library__add-no-design" data-location-key="'.esc_attr($location_key).'">'.esc_html__('Add No Design', 'sunstreaker').'</button>';
     echo '            <button type="button" class="button-link-delete sunstreaker-logo-library__clear" data-location-key="'.esc_attr($location_key).'"'.(empty($selected_logo_ids) ? ' hidden' : '').'>'.esc_html__('Clear', 'sunstreaker').'</button>';
-    echo '            <span class="description">'.esc_html__('Choose one or more media library logos available for this location.', 'sunstreaker').'</span>';
+    echo '            <span class="description">'.esc_html__('Choose one or more media library logos available for this location, or add No Design as an explicit option.', 'sunstreaker').'</span>';
     echo '            <ul class="sunstreaker-logo-library__list" data-location-key="'.esc_attr($location_key).'"></ul>';
     echo '          </span>';
     echo '        </p>';
@@ -1595,11 +1665,12 @@ add_action('woocommerce_admin_process_product_object', function ($product) {
       'price' => $posted_logo_location_price[$location_key] ?? '',
       'production' => $posted_logo_location_production[$location_key] ?? '',
       'logo_ids' => $posted_logo_location_logo_ids[$location_key] ?? [],
-      'default_logo_id' => $posted_logo_location_default_logo_id[$location_key] ?? 0,
+      'default_logo_id' => $posted_logo_location_default_logo_id[$location_key] ?? '',
     ], $location_key);
 
     foreach ($logo_location_settings[$location_key]['logo_ids'] as $logo_id) {
-      $aggregate_logo_ids[] = absint($logo_id);
+      $numeric_logo_id = absint($logo_id);
+      if ($numeric_logo_id > 0) $aggregate_logo_ids[] = $numeric_logo_id;
     }
 
     if (!$has_aggregate && $logo_location_settings[$location_key]['enabled'] === 'yes') {
@@ -1676,7 +1747,7 @@ add_action('admin_enqueue_scripts', function($hook){
       return $carry;
     }, []) : [],
     'defaultLogoIdsByLocation' => $product_id > 0 ? array_reduce(array_keys(sunstreaker_logo_print_locations()), static function(array $carry, string $location_key) use ($admin_logo_location_settings): array {
-      $carry[$location_key] = !empty($admin_logo_location_settings[$location_key]['default_logo_id']) ? absint($admin_logo_location_settings[$location_key]['default_logo_id']) : 0;
+      $carry[$location_key] = !empty($admin_logo_location_settings[$location_key]['default_logo_id']) ? (string) $admin_logo_location_settings[$location_key]['default_logo_id'] : '';
       return $carry;
     }, []) : [],
     'strings' => [
@@ -1686,6 +1757,7 @@ add_action('admin_enqueue_scripts', function($hook){
       'removeLogo' => __('Remove logo', 'sunstreaker'),
       'setDefaultLogo' => __('Set default', 'sunstreaker'),
       'defaultLogo' => __('Default', 'sunstreaker'),
+      'noDesignLogo' => __('No Design', 'sunstreaker'),
     ],
   ]);
 });

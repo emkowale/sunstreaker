@@ -293,12 +293,20 @@ function sunstreaker_get_posted_logo_location_choices(int $product_id = 0): arra
     : [];
 
   foreach ($allowed_locations as $location_key => $location_settings) {
-    $logo_id = isset($posted_logo_ids[$location_key]) ? absint($posted_logo_ids[$location_key]) : 0;
-    if ($logo_id <= 0) continue;
+    $logo_id = isset($posted_logo_ids[$location_key]) ? trim((string) $posted_logo_ids[$location_key]) : '';
+    if ($logo_id === '' && function_exists('sunstreaker_get_single_logo_location_choice')) {
+      $single_choice = sunstreaker_get_single_logo_location_choice($product_id, (string) $location_key);
+      $logo_id = isset($single_choice['id']) ? (string) $single_choice['id'] : '';
+    }
+    if ($logo_id === '') continue;
 
-    $choice = function_exists('sunstreaker_get_logo_choice')
-      ? sunstreaker_get_logo_choice($product_id, $logo_id)
-      : [];
+    if (function_exists('sunstreaker_is_no_design_logo_token') && sunstreaker_is_no_design_logo_token($logo_id)) {
+      $choice = function_exists('sunstreaker_no_design_logo_choice') ? sunstreaker_no_design_logo_choice() : [];
+    } else {
+      $choice = function_exists('sunstreaker_get_logo_choice')
+        ? sunstreaker_get_logo_choice($product_id, absint($logo_id))
+        : [];
+    }
     if (empty($choice)) continue;
 
     $choices[$location_key] = [
@@ -308,7 +316,7 @@ function sunstreaker_get_posted_logo_location_choices(int $product_id = 0): arra
         : ucwords(str_replace('_', ' ', $location_key)),
       'logo_id' => $logo_id,
       'logo' => $choice,
-      'price' => isset($location_settings['price']) ? max(0.0, (float) $location_settings['price']) : 0.0,
+      'price' => !empty($choice['is_no_design']) ? 0.0 : (isset($location_settings['price']) ? max(0.0, (float) $location_settings['price']) : 0.0),
       'production' => isset($location_settings['production']) ? (string) $location_settings['production'] : '',
     ];
   }
@@ -462,8 +470,22 @@ add_action('woocommerce_before_add_to_cart_button', function(){
     $right_chest_price_label
   );
   $front_back_note_html = __('Upload artwork for the front and/or back of the garment.', 'sunstreaker');
+  $mockup_builder_mode = false;
 
-  if (!empty($scrub_fields)) {
+  if ($use_logos && !empty($logo_location_settings)) {
+    $mockup_builder_mode = true;
+    foreach ($logo_location_settings as $location_key => $location_settings) {
+      $location_logo_choices = function_exists('sunstreaker_get_logo_location_choices')
+        ? sunstreaker_get_logo_location_choices($product_id, $location_key)
+        : [];
+      if (count($location_logo_choices) !== 1) {
+        $mockup_builder_mode = false;
+        break;
+      }
+    }
+  }
+
+  if (!$mockup_builder_mode && !empty($scrub_fields)) {
     echo '<div class="sunstreaker-scrubs'.($posted_scrubs_choice === 'yes' ? ' is-active' : '').'" data-sunstreaker-scrubs>';
     echo '  <div class="sunstreaker-scrubs__header">';
     echo '    <span class="sunstreaker-scrubs__title">'.esc_html__('Scrubs', 'sunstreaker').'</span>';
@@ -512,7 +534,7 @@ add_action('woocommerce_before_add_to_cart_button', function(){
     echo '</div>';
   }
 
-  if ($use_name_number) {
+  if (!$mockup_builder_mode && $use_name_number) {
     echo '<div class="sunstreaker-fields">';
     echo '  <p class="sunstreaker-note">'.wp_kses_post($note_html).'</p>';
     echo '  <div class="sunstreaker-field">';
@@ -533,8 +555,25 @@ add_action('woocommerce_before_add_to_cart_button', function(){
   echo '<input type="hidden" id="sunstreaker_original_art_back_png_url" name="sunstreaker_original_art_back_png_url" value="" />';
 
   if ($use_logos) {
-    echo '<div class="sunstreaker-fields sunstreaker-logo-fields">';
-    echo '  <p class="sunstreaker-note">'.wp_kses_post($logo_note_html).'</p>';
+    $has_selectable_logo_location = false;
+    foreach ($logo_location_settings as $location_key => $location_settings) {
+      $location_logo_choices = function_exists('sunstreaker_get_logo_location_choices')
+        ? sunstreaker_get_logo_location_choices($product_id, $location_key)
+        : [];
+      if (count($location_logo_choices) > 1) {
+        $has_selectable_logo_location = true;
+        break;
+      }
+    }
+
+    if ($mockup_builder_mode) {
+      echo '<div class="sunstreaker-logo-fields" hidden aria-hidden="true">';
+    } else {
+      echo '<div class="sunstreaker-fields sunstreaker-logo-fields">';
+      if ($has_selectable_logo_location) {
+        echo '  <p class="sunstreaker-note">'.wp_kses_post($logo_note_html).'</p>';
+      }
+    }
     echo '  <input type="hidden" id="sunstreaker_logo_id" name="sunstreaker_logo_id" value="'.esc_attr((string) $posted_logo_id).'" />';
     echo '  <div class="sunstreaker-logo-location-list">';
 
@@ -546,21 +585,31 @@ add_action('woocommerce_before_add_to_cart_button', function(){
         ? sunstreaker_get_logo_location_choices($product_id, $location_key)
         : [];
       $selected_location = $posted_logo_locations[$location_key] ?? null;
-      $selected_logo_id = !empty($selected_location) ? (int) ($selected_location['logo_id'] ?? 0) : 0;
+      $selected_logo_id = !empty($selected_location) ? (string) ($selected_location['logo_id'] ?? '') : '';
+      $single_logo_choice = count($location_logo_choices) === 1 ? $location_logo_choices[0] : [];
+      $has_single_logo_choice = !empty($single_logo_choice) && array_key_exists('id', $single_logo_choice);
+      if ($selected_logo_id === '' && $has_single_logo_choice) {
+        $selected_logo_id = (string) $single_logo_choice['id'];
+      }
       echo '    <div class="sunstreaker-logo-location-option" data-logo-location="'.esc_attr($location_key).'">';
       echo '      <div class="sunstreaker-logo-location-option__header">';
       echo '        <span class="sunstreaker-logo-location-option__label">'.esc_html($location_label).'</span>';
       echo '      </div>';
       echo '      <div class="sunstreaker-logo-location-option__controls">';
-      echo '        <select class="sunstreaker-select sunstreaker-logo-location-option__select" id="sunstreaker_logo_location_logo_id_'.esc_attr($location_key).'" name="sunstreaker_logo_location_logo_id['.esc_attr($location_key).']" data-logo-location-select="'.esc_attr($location_key).'" data-location-label="'.esc_attr($location_label).'">';
-      echo '          <option value="">'.esc_html__('No Design', 'sunstreaker').'</option>';
+      echo '        <select class="sunstreaker-select sunstreaker-logo-location-option__select" id="sunstreaker_logo_location_logo_id_'.esc_attr($location_key).'" name="sunstreaker_logo_location_logo_id['.esc_attr($location_key).']" data-logo-location-select="'.esc_attr($location_key).'" data-location-label="'.esc_attr($location_label).'"'.($has_single_logo_choice ? ' data-single-logo="yes" hidden tabindex="-1" aria-hidden="true"' : '').'>';
+      if (!$has_single_logo_choice) {
+        echo '          <option value="">'.esc_html__('No Design', 'sunstreaker').'</option>';
+      }
       foreach ($location_logo_choices as $logo) {
-        $logo_id = isset($logo['id']) ? (int) $logo['id'] : 0;
-        if ($logo_id <= 0) continue;
+        $logo_id = isset($logo['id']) ? (string) $logo['id'] : '';
+        if ($logo_id === '') continue;
         $title = isset($logo['title']) ? (string) $logo['title'] : 'Logo '.$logo_id;
         echo '          <option value="'.esc_attr((string) $logo_id).'" '.selected($selected_logo_id, $logo_id, false).'>'.esc_html($title).'</option>';
       }
       echo '        </select>';
+      if ($has_single_logo_choice) {
+        echo '        <span class="sunstreaker-logo-location-option__static">'.esc_html((string) ($single_logo_choice['title'] ?? 'Logo')).'</span>';
+      }
       echo '      </div>';
       echo '    </div>';
     }
@@ -569,7 +618,7 @@ add_action('woocommerce_before_add_to_cart_button', function(){
     echo '</div>';
   }
 
-  if ($use_right_chest_text) {
+  if (!$mockup_builder_mode && $use_right_chest_text) {
     echo '<div class="sunstreaker-fields sunstreaker-right-chest-fields">';
     echo '  <p class="sunstreaker-note">'.wp_kses_post($right_chest_note_html).'</p>';
     echo '  <div class="sunstreaker-field">';
@@ -595,7 +644,7 @@ add_action('woocommerce_before_add_to_cart_button', function(){
     echo '</div>';
   }
 
-  if ($use_front_back) {
+  if (!$mockup_builder_mode && $use_front_back) {
     echo '<div class="sunstreaker-fields sunstreaker-front-back-fields">';
     echo '  <p class="sunstreaker-note">'.wp_kses_post($front_back_note_html).'</p>';
 

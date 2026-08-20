@@ -1632,6 +1632,7 @@
       var dropdown;
 
       if (!native || native._sunstreakerDropdownBuilt || !native.options) return;
+      if (native.getAttribute('data-single-logo') === 'yes') return;
 
       field = native.closest('.sunstreaker-logo-location-option__controls');
       if (!field) return;

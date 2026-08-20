@@ -2,6 +2,7 @@ jQuery(function($){
   var config = window.sunstreakerProductEdit || {};
   var fontConfig = config.fonts || {};
   var strings = config.strings || {};
+  var NO_DESIGN_LOGO_ID = '__none__';
   var selectedLogosByLocation = $.isPlainObject(config.selectedLogosByLocation) ? $.extend(true, {}, config.selectedLogosByLocation) : {};
   var defaultLogoIdsByLocation = $.isPlainObject(config.defaultLogoIdsByLocation) ? $.extend({}, config.defaultLogoIdsByLocation) : {};
   var mediaFrame = null;
@@ -54,7 +55,9 @@ jQuery(function($){
   }
 
   function normalizeLogo(logo){
-    var id = Number(logo && logo.id);
+    var rawId = logo && typeof logo.id !== 'undefined' && logo.id !== null ? String(logo.id) : '';
+    var isNoDesign = rawId === NO_DESIGN_LOGO_ID;
+    var id = isNoDesign ? NO_DESIGN_LOGO_ID : String(Number(rawId) || '');
     if (!id) return null;
 
     var title = '';
@@ -62,6 +65,8 @@ jQuery(function($){
       title = logo.title.trim();
     } else if (logo && typeof logo.filename === 'string' && logo.filename.trim() !== '') {
       title = logo.filename.trim();
+    } else if (isNoDesign) {
+      title = strings.noDesignLogo || 'No Design';
     } else {
       title = 'Logo ' + id;
     }
@@ -89,7 +94,8 @@ jQuery(function($){
       title: title,
       preview_url: previewUrl,
       thumb_url: thumbUrl,
-      alt: logo && typeof logo.alt === 'string' ? logo.alt : ''
+      alt: logo && typeof logo.alt === 'string' ? logo.alt : '',
+      is_no_design: isNoDesign
     };
   }
 
@@ -98,19 +104,21 @@ jQuery(function($){
   }
 
   function defaultLogoIdForLocation(locationKey){
-    var id = Number(defaultLogoIdsByLocation[locationKey] || 0);
-    return id > 0 ? id : 0;
+    var id = String(defaultLogoIdsByLocation[locationKey] || '').trim();
+    if (id === NO_DESIGN_LOGO_ID) return id;
+    id = String(Number(id) || '');
+    return id || '';
   }
 
   function normalizeDefaultLogo(locationKey){
     var logos = logosForLocation(locationKey);
     var defaultLogoId = defaultLogoIdForLocation(locationKey);
     var hasDefault = logos.some(function(logo){
-      return logo && Number(logo.id) === defaultLogoId;
+      return logo && String(logo.id) === String(defaultLogoId);
     });
 
     if (!hasDefault) {
-      defaultLogoIdsByLocation[locationKey] = 0;
+      defaultLogoIdsByLocation[locationKey] = '';
     }
   }
 
@@ -147,7 +155,7 @@ jQuery(function($){
     }
 
     logos.forEach(function(logo){
-      var isDefault = Number(logo.id) === defaultLogoId;
+      var isDefault = String(logo.id) === String(defaultLogoId);
       var $item = $('<li/>', {
         'class': 'sunstreaker-logo-library__item' + (isDefault ? ' is-default' : ''),
         'data-logo-id': String(logo.id),
@@ -203,8 +211,8 @@ jQuery(function($){
 
     (logos || []).forEach(function(logo){
       var normalized = normalizeLogo(logo);
-      if (!normalized || seen[normalized.id]) return;
-      seen[normalized.id] = true;
+      if (!normalized || seen[String(normalized.id)]) return;
+      seen[String(normalized.id)] = true;
       deduped.push(normalized);
     });
 
@@ -228,7 +236,7 @@ jQuery(function($){
         selection.reset();
         logosForLocation(activeLocationKey).forEach(function(logo){
           var attachment;
-          if (!logo || !logo.id) return;
+          if (!logo || !logo.id || String(logo.id) === NO_DESIGN_LOGO_ID) return;
           attachment = wp.media.attachment(logo.id);
           attachment.fetch();
           selection.add(attachment);
@@ -237,9 +245,11 @@ jQuery(function($){
 
       mediaFrame.on('select', function(){
         var selection = mediaFrame.state().get('selection');
-        selectedLogosByLocation[activeLocationKey] = uniqueLogos(selection.map(function(attachment){
+        selectedLogosByLocation[activeLocationKey] = uniqueLogos(logosForLocation(activeLocationKey).filter(function(logo){
+          return String(logo.id) === NO_DESIGN_LOGO_ID;
+        }).concat(selection.map(function(attachment){
           return attachment.toJSON();
-        }));
+        })));
         renderLogoList(activeLocationKey);
       });
     }
@@ -259,12 +269,12 @@ jQuery(function($){
     var locationKey = String($(this).data('locationKey') || '');
     event.preventDefault();
     if (!locationKey) return;
-    logoId = Number($(this).data('logoId'));
+    logoId = String($(this).data('logoId') || '');
     selectedLogosByLocation[locationKey] = logosForLocation(locationKey).filter(function(logo){
-      return logo.id !== logoId;
+      return String(logo.id) !== logoId;
     });
-    if (defaultLogoIdForLocation(locationKey) === logoId) {
-      defaultLogoIdsByLocation[locationKey] = 0;
+    if (String(defaultLogoIdForLocation(locationKey)) === logoId) {
+      defaultLogoIdsByLocation[locationKey] = '';
     }
     renderLogoList(locationKey);
   });
@@ -274,9 +284,24 @@ jQuery(function($){
     var locationKey = String($(this).data('locationKey') || '');
     event.preventDefault();
     if (!locationKey) return;
-    logoId = Number($(this).data('logoId'));
+    logoId = String($(this).data('logoId') || '');
     if (!logoId) return;
     defaultLogoIdsByLocation[locationKey] = logoId;
+    renderLogoList(locationKey);
+  });
+
+  $(document).on('click', '.sunstreaker-logo-library__add-no-design', function(event){
+    var locationKey = String($(this).data('locationKey') || '');
+    event.preventDefault();
+    if (!locationKey) return;
+    selectedLogosByLocation[locationKey] = uniqueLogos(logosForLocation(locationKey).concat([{
+      id: NO_DESIGN_LOGO_ID,
+      title: strings.noDesignLogo || 'No Design',
+      preview_url: '',
+      thumb_url: '',
+      alt: '',
+      is_no_design: true
+    }]));
     renderLogoList(locationKey);
   });
 
@@ -285,7 +310,7 @@ jQuery(function($){
     event.preventDefault();
     if (!locationKey) return;
     selectedLogosByLocation[locationKey] = [];
-    defaultLogoIdsByLocation[locationKey] = 0;
+    defaultLogoIdsByLocation[locationKey] = '';
     renderLogoList(locationKey);
   });
 
